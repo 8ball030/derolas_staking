@@ -201,4 +201,30 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
 
         emit RewardsClaimed(msg.sender, amount);
     }
+
+    /// @dev Gets service multisig nonces.
+    /// @param multisig Service multisig address.
+    /// @return nonces Current donations value.
+    function getMultisigNonces(address multisig) external view virtual returns (uint256[] memory nonces) {
+        nonces = new uint256[](1);
+        // The nonce is equal to the total donations value
+        nonces[0] = donators[multisig];
+    }
+
+    /// @dev Checks if the service multisig liveness ratio passes the defined liveness threshold.
+    /// @notice The ratio pass is true if there was a difference in donations between previous and current checkpoints.
+    /// @param curNonces Current service multisig set of a single nonce.
+    /// @param lastNonces Last service multisig set of a single nonce.
+    /// @return ratioPass True, if the liveness ratio passes the check.
+    function isRatioPass(
+        uint256[] memory curNonces,
+        uint256[] memory lastNonces,
+        uint256
+    ) external view virtual returns (bool ratioPass) {
+        // If the checkpoint was called in the exact same block, the ratio is zero
+        // If the current nonce is not greater than the last nonce, the ratio is zero
+        if (curNonces[0] > lastNonces[0]) {
+            ratioPass = true;
+        }
+    }
 }
