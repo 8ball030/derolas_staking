@@ -167,7 +167,15 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         emit UnclaimedRewardsDonated(totalUnclaimed);
     }
 
+
+    function claimable(address _address) external view returns (uint256) {
+        require(currentEpoch > 0, "No epoch to claim from");
+        return epochToClaimable[currentEpoch - 1][_address];
+    }
+
     function claim() external nonReentrant {
+        require(currentEpoch > 0, "No epoch to claim from");
+
         uint256 amount = epochToClaimable[currentEpoch - 1][msg.sender];
         require(amount > 0, "Nothing to claim");
         require(canPayTicket(amount), "Not enough OLAS rewards to pay the ticket");

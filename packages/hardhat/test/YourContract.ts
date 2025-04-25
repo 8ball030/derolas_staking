@@ -161,7 +161,7 @@ describe("DerolasStaking", function () {
   });
 
   describe("Claiming", function () {
-    it("A donar receieves shares.", async function () {
+    it("A donar can claim.", async function () {
       // const transferAmount = await impersonateAccount(stakingContract);
       // expect(await stakingContract.incentiveBalance()).to.equal(transferAmount);
 
@@ -178,6 +178,7 @@ describe("DerolasStaking", function () {
       const currentEpoch = await stakingContract.currentEpoch();
       expect(currentEpoch).to.equal(0);
       // End the epoch
+      stakingContract.claim().then(() => {});
       await stakingContract.endEpoch();
       // check the epoch
       const newEpoch = await stakingContract.currentEpoch();
@@ -187,11 +188,13 @@ describe("DerolasStaking", function () {
       const newBalance = await incentiveContract.balanceOf(deployer.address);
       expect(newBalance).to.be.equal(initialBalance);
       // we now should be able to claim
-      await stakingContract.claim();
 
       const newBalanceAfterClaim = await incentiveContract.balanceOf(deployer.address);
       // check the shares
-
+      // we now should be able to claim for this epoch
+      await stakingContract.claimable(deployer.address).then(claimable => {
+        expect(claimable).to.be.gt(0);
+      });
       expect(newBalanceAfterClaim).to.be.gt(newBalance);
     });
   });
