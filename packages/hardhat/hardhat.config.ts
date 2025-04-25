@@ -53,7 +53,9 @@ const config: HardhatUserConfig = {
       forking: {
         url: `https://base.llamarpc.com`,
         enabled: true,
+        blockNumber: 29397609,
       },
+      initialBaseFeePerGas: 0,
     },
     mainnet: {
       url: `https://eth-mainnet.alchemyapi.io/v2/${providerApiKey}`,

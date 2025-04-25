@@ -41,6 +41,8 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     uint256 public totalClaimed;
     uint256 public totalUnclaimed;
 
+    uint256 public currentEpoch = 0;
+
     mapping(address => bool) public registeredAgents;
     mapping(address => uint256) public donators;
     mapping(address => uint256) public claimable;
@@ -72,6 +74,10 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
 
     receive() external payable {}
 
+    function incentiveBalance() public view returns (uint256) {
+        return IERC20(incentiveTokenAddress).balanceOf(address(this));
+    }
+
     function canPlayGame() public view returns (bool) {
         return IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochRewards;
     }
@@ -91,7 +97,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     }
 
     function donate() external payable nonReentrant {
-        require(msg.value >= minimumDonation, "Minimum donation not met");
+        require(msg.value >= minimumDonation, "Donation amount is less than the minimum donation");
         require(canPlayGame(), "Not enough OLAS rewards to play the game");
 
         donators[msg.sender] += msg.value;
@@ -116,6 +122,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         registeredAgents[msg.sender] = true;
         emit AgentRegistered(msg.sender, 0);
     }
+
 
     function getCurrentShare(address _address) public view returns (uint256) {
         return (donators[_address] * 1e18) / totalDonated;
@@ -149,8 +156,24 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         }
 
         totalDonated = 0;
+        currentEpoch += 1;
         emit AuctionEnded(epochRewards);
     }
+
+
+    // Function to take a value of donation and return the share of the incentives
+    // if the donation is less than the minimum donation, revert
+    // if the donation is greater than the minimum donation, return the share
+    // if the there are no donations, return all
+    function estimateTicketPercentage(uint256 donation) public view returns (uint256) {
+        require(donation >= minimumDonation, "Minimum donation not met");
+        require(canPlayGame(), "Not enough OLAS rewards to play the game");
+        if (totalDonated == 0) {
+            return 1e18;
+        }
+        return (donation * 1e18) / totalDonated;
+    }
+
 
     function donateUnclaimedRewards() internal {
         uint256 totalUnclaimedLocal;
@@ -201,4 +224,5 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
 
         emit RewardsClaimed(msg.sender, amount);
     }
+
 }
