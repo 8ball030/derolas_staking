@@ -153,14 +153,46 @@ describe("DerolasStaking", function () {
         const donationAmount = 0.001; // 0.001 ETH
         const donationAmountInWei = ethers.parseEther(donationAmount.toString());
         await stakingContract.connect(wallet).donate({ value: donationAmountInWei });
+        const newShares = await stakingContract.getCurrentShare(wallet.address);
         // check the shares
-        const shares = await stakingContract.getCurrentShare(wallet.address);
-        const totalShares = await stakingContract.totalDonated();
-        // expect the shares to be equal to the donation amount
-        console.log("Shares: ", shares.toString());
-        console.log("Total Shares: ", totalShares.toString());
-        // check the incentive balance
+        expect(newShares).to.be.gt(initialShares);
       });
+    });
+  });
+
+  describe("Claiming", function () {
+    it("A donar receieves shares.", async function () {
+      // const transferAmount = await impersonateAccount(stakingContract);
+      // expect(await stakingContract.incentiveBalance()).to.equal(transferAmount);
+
+      const incentiveContract = await ethers.getContractAt("IERC20", incentiveTokenAddress);
+      const [deployer] = await ethers.getSigners();
+      // we fastforward the time to the next epoch
+      await network.provider.send("evm_increaseTime", [86400]); // 1 day
+      await network.provider.send("evm_mine");
+      // donate to the contract
+      // check the incentive balance
+      const initialBalance = await incentiveContract.balanceOf(deployer.address);
+      expect(await stakingContract.incentiveBalance()).to.equal(INCENTIVE_TOKENS);
+      // check the epoch
+      const currentEpoch = await stakingContract.currentEpoch();
+      expect(currentEpoch).to.equal(0);
+      // End the epoch
+      await stakingContract.endEpoch();
+      // check the epoch
+      const newEpoch = await stakingContract.currentEpoch();
+      expect(newEpoch).to.equal(1);
+
+      // Confirm we still have the same balance
+      const newBalance = await incentiveContract.balanceOf(deployer.address);
+      expect(newBalance).to.be.equal(initialBalance);
+      // we now should be able to claim
+      await stakingContract.claim();
+
+      const newBalanceAfterClaim = await incentiveContract.balanceOf(deployer.address);
+      // check the shares
+
+      expect(newBalanceAfterClaim).to.be.gt(newBalance);
     });
   });
 });
