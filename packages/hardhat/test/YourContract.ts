@@ -11,9 +11,9 @@ const olasIndex: number = 4;
 const incentiveTokenAddress: string = "0x54330d28ca3357f294334bdc454a032e7f353416";
 
 const INCENTIVE_TOKENS = ethers.parseEther("1000");
+const OLAS_HOLDER = "0x7Da5c3878497bA7dC9E3F3fd6735e3F26A110b2a"; // Replace with the actual OLAS holder address
 
 async function impersonateAccount(stakingContract: DerolasStaking) {
-  const OLAS_HOLDER = "0x7Da5c3878497bA7dC9E3F3fd6735e3F26A110b2a"; // Replace with the actual OLAS holder address
   // Impersonate OLAS holder
   await network.provider.request({
     method: "hardhat_impersonateAccount",
@@ -119,6 +119,8 @@ describe("DerolasStaking", function () {
       expect(await stakingContract.incentiveBalance()).to.equal(transferAmount);
     });
 
+    // Impersonate OLAS holder
+
     it("Should let Users donate", async function () {
       const donationAmount = 0.001; // 0.001 ETH
       const donationAmountInWei = ethers.parseEther(donationAmount.toString());
@@ -196,6 +198,32 @@ describe("DerolasStaking", function () {
         expect(claimable).to.be.gt(0);
       });
       expect(newBalanceAfterClaim).to.be.gt(newBalance);
+    });
+
+    // confirm we can call the topUp function
+    it("Should top up OLAS rewards via function", async function () {
+      await network.provider.request({
+        method: "hardhat_impersonateAccount",
+        params: [OLAS_HOLDER],
+      });
+      const impersonatedSigner = await ethers.getSigner(OLAS_HOLDER);
+      // Fund the impersonated account
+      const [deployer] = await ethers.getSigners();
+      await deployer.sendTransaction({
+        to: OLAS_HOLDER,
+        value: ethers.parseEther("1"),
+      });
+
+      // Transfer OLAS to your staking contract
+      const olasToken = await ethers.getContractAt("IERC20", incentiveTokenAddress);
+      await olasToken.connect(impersonatedSigner).approve(stakingContract.target, INCENTIVE_TOKENS);
+      const initialBalance = await stakingContract.incentiveBalance();
+      await stakingContract.connect(impersonatedSigner).topUpIncentiveBalance(INCENTIVE_TOKENS);
+      const newBalance = await stakingContract.incentiveBalance();
+      expect(newBalance).to.greaterThan(initialBalance);
+      // expect(await stakingContract.topUpIncentiveBalance(minimumDonation)).to.be.not.revertedWith(
+      //   "Not enough OLAS rewards to play the game",
+      // );
     });
   });
 });

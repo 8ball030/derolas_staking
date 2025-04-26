@@ -55,6 +55,7 @@ const config: HardhatUserConfig = {
         enabled: true,
         blockNumber: 29397609,
       },
+      chainId: 8453,
       initialBaseFeePerGas: 0,
     },
     mainnet: {

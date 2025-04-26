@@ -31,12 +31,12 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
 
     uint256 public immutable minimumDonation;
     uint256 public epochRewards = 100_000_000;
-    uint256 public lastAuctionBlock;
-    uint256 public immutable epochLength = 6500;
+    uint256 public immutable epochLength = 5;
 
     uint256 public totalDonated;
     uint256 public totalClaimed;
     uint256 public totalUnclaimed;
+    uint256 public lastAuctionBlock = 0;
 
 
     uint8 public currentEpoch = 0;
@@ -213,6 +213,45 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
             return 0;
         }
         return estimateTicketPercentage(donation);
+    }
+
+    function getEpochProgress() public view returns (uint256) {
+        return (block.number - lastAuctionBlock) * 100 / epochLength;
+    }
+
+    function getBlocksRemaining() public view returns (uint256) {
+        if (block.number - lastAuctionBlock >= epochLength) {
+            return 0;
+        }
+        return epochLength - (block.number - lastAuctionBlock);
+    }
+
+    function getTotalDonated() public view returns (uint256) {
+        return totalDonated;
+    }
+
+    function currentIncentiveBalance() public view returns (uint256) {
+        return IERC20(incentiveTokenAddress).balanceOf(address(this));
+    }
+
+    function getEpochRewards() public view returns (uint256) {
+        return epochRewards;
+    }
+    function getCurrentEpoch() public view returns (uint8) {
+        return currentEpoch;
+    }
+    function getTotalClaimed() public view returns (uint256) {
+        return totalClaimed;
+    }
+
+    function topUpIncentiveBalance(uint256 amount) external {
+        require(amount > 0, "Amount must be greater than 0");
+        require(IERC20(incentiveTokenAddress).balanceOf(msg.sender) >= amount, "Not enough OLAS rewards to top up");
+        require(IERC20(incentiveTokenAddress).allowance(msg.sender, address(this)) >= amount, "Not enough allowance to top up");
+        // must exceed the epoch rewards
+        require(amount >= epochRewards, "Amount must be greater than or equal to epoch rewards");
+        // transfer the tokens from the sender to this contract
+        IERC20(incentiveTokenAddress).safeTransferFrom(msg.sender, address(this), amount);
     }
 
 }
