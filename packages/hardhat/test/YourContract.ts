@@ -231,7 +231,18 @@ describe("DerolasStaking", function () {
       expect(claimable2).to.be.gt(claimable);
     });
     it("Should allow claim", async function () {
+      const [deployer] = await ethers.getSigners();
+      const olasToken = await ethers.getContractAt("IERC20", incentiveTokenAddress);
+      const preClaimBalanceIncentive = await olasToken.balanceOf(deployer.address);
+      const stakingContractBalance = await olasToken.balanceOf(stakingContract.target);
       const result = await stakingContract.claim();
+      const postClaimBalanceIncentive = await olasToken.balanceOf(deployer.address);
+      const postStakingContractBalance = await olasToken.balanceOf(stakingContract.target);
+      // check that the balance of the deployer has increased
+      expect(postClaimBalanceIncentive).to.be.gt(preClaimBalanceIncentive);
+      // check that the balance of the staking contract has decreased
+      expect(postStakingContractBalance).to.be.lt(stakingContractBalance);
+
       expect(result).to.be.not.revertedWith("Not enough OLAS rewards to play the game");
     });
     it("Users should then not have claimable", async function () {

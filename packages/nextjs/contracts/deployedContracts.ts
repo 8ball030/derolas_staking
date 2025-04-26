@@ -7,7 +7,7 @@ import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 const deployedContracts = {
   8453: {
     DerolasStaking: {
-      address: "0x2B07F89c9F574a890F5B8b7FddAfbBaE40f6Fde2",
+      address: "0x905Ad472d7eeB94ed1Fc29D8ff4B53FD4D5a5Eb4",
       abi: [
         {
           inputs: [
@@ -19,16 +19,6 @@ const deployedContracts = {
             {
               internalType: "uint256",
               name: "_minimumDonation",
-              type: "uint256",
-            },
-            {
-              internalType: "uint256",
-              name: "_epochRewards",
-              type: "uint256",
-            },
-            {
-              internalType: "uint256",
-              name: "_epochLength",
               type: "uint256",
             },
             {
@@ -522,6 +512,19 @@ const deployedContracts = {
             },
           ],
           name: "getCurrentShare",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "getEpochLength",
           outputs: [
             {
               internalType: "uint256",

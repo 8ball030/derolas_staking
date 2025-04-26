@@ -239,6 +239,9 @@ function donateUnclaimedRewards(uint8 epoch) internal {
     }
 
     function getBlocksRemaining() public view returns (uint256) {
+        if (currentEpoch == 0) {
+            return 0;
+        }
         uint256 blocksRemaining = epochToEndBlock[currentEpoch] - block.number;
         if (blocksRemaining < 0 ) {
             return 0;
@@ -264,6 +267,10 @@ function donateUnclaimedRewards(uint8 epoch) internal {
 
     function getTotalClaimed() public view returns (uint256) {
         return totalClaimed;
+    }
+
+    function getEpochLength() public view returns (uint256) {
+        return epochLength;
     }
     function getTotalUnclaimed() public view returns (uint256) {
         if (currentEpoch == 0) {
