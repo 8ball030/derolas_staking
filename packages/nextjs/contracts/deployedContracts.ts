@@ -7,7 +7,7 @@ import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 const deployedContracts = {
   8453: {
     DerolasStaking: {
-      address: "0x39826E09f8efb9df4C56Aeb9eEC0D2B8164d3B36",
+      address: "0x2B07F89c9F574a890F5B8b7FddAfbBaE40f6Fde2",
       abi: [
         {
           inputs: [
@@ -19,6 +19,16 @@ const deployedContracts = {
             {
               internalType: "uint256",
               name: "_minimumDonation",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "_epochRewards",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "_epochLength",
               type: "uint256",
             },
             {
@@ -125,25 +135,6 @@ const deployedContracts = {
           inputs: [
             {
               indexed: true,
-              internalType: "address",
-              name: "agentAddress",
-              type: "address",
-            },
-            {
-              indexed: true,
-              internalType: "uint256",
-              name: "agentId",
-              type: "uint256",
-            },
-          ],
-          name: "AgentRegistered",
-          type: "event",
-        },
-        {
-          anonymous: false,
-          inputs: [
-            {
-              indexed: true,
               internalType: "uint256",
               name: "epochRewards",
               type: "uint256",
@@ -196,7 +187,7 @@ const deployedContracts = {
             {
               indexed: true,
               internalType: "address",
-              name: "agentAddress",
+              name: "donatorAddress",
               type: "address",
             },
             {
@@ -347,6 +338,25 @@ const deployedContracts = {
           type: "function",
         },
         {
+          inputs: [
+            {
+              internalType: "uint8",
+              name: "",
+              type: "uint8",
+            },
+          ],
+          name: "epochDonated",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
           inputs: [],
           name: "epochLength",
           outputs: [
@@ -362,30 +372,6 @@ const deployedContracts = {
         {
           inputs: [],
           name: "epochRewards",
-          outputs: [
-            {
-              internalType: "uint256",
-              name: "",
-              type: "uint256",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [
-            {
-              internalType: "uint8",
-              name: "",
-              type: "uint8",
-            },
-            {
-              internalType: "address",
-              name: "",
-              type: "address",
-            },
-          ],
-          name: "epochToClaimable",
           outputs: [
             {
               internalType: "uint256",
@@ -452,7 +438,7 @@ const deployedContracts = {
               type: "uint8",
             },
           ],
-          name: "epochToTotalClaimed",
+          name: "epochToEndBlock",
           outputs: [
             {
               internalType: "uint256",
@@ -472,25 +458,6 @@ const deployedContracts = {
             },
           ],
           name: "epochToTotalDonated",
-          outputs: [
-            {
-              internalType: "uint256",
-              name: "",
-              type: "uint256",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [
-            {
-              internalType: "uint8",
-              name: "",
-              type: "uint8",
-            },
-          ],
-          name: "epochToTotalUnclaimed",
           outputs: [
             {
               internalType: "uint256",
@@ -619,6 +586,19 @@ const deployedContracts = {
         },
         {
           inputs: [],
+          name: "getTotalUnclaimed",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
           name: "incentiveBalance",
           outputs: [
             {
@@ -638,19 +618,6 @@ const deployedContracts = {
               internalType: "address",
               name: "",
               type: "address",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "lastAuctionBlock",
-          outputs: [
-            {
-              internalType: "uint256",
-              name: "",
-              type: "uint256",
             },
           ],
           stateMutability: "view",
@@ -710,6 +677,19 @@ const deployedContracts = {
         },
         {
           inputs: [],
+          name: "permit2",
+          outputs: [
+            {
+              internalType: "contract IPermit2",
+              name: "",
+              type: "address",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
           name: "poolId",
           outputs: [
             {
@@ -757,19 +737,6 @@ const deployedContracts = {
         {
           inputs: [],
           name: "totalDonated",
-          outputs: [
-            {
-              internalType: "uint256",
-              name: "",
-              type: "uint256",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "totalUnclaimed",
           outputs: [
             {
               internalType: "uint256",

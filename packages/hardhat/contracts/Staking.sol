@@ -1,9 +1,7 @@
 //SPDX-License-Identifier: MIT
 pragma solidity >=0.8.0 <0.9.0;
 
-import "hardhat/console.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -15,47 +13,48 @@ interface IBalancerRouter {
         bool wethIsEth,
         bytes memory userData
     ) external payable;
+    // get permit2
+    function getPermit2() external view returns (address);
 }
 
+interface IPermit2 {
+    function approve(address token, address spender, uint160 amount, uint48 expiration) external;
+}
+
+
 contract DerolasStaking is ReentrancyGuard, Ownable {
-    using EnumerableSet for EnumerableSet.AddressSet;
     using SafeERC20 for IERC20;
+
+
+    IPermit2 public immutable permit2;
 
     address public immutable balancerRouter;
     address public immutable poolId;
     uint8 public immutable assetsInPool;
     uint8 public immutable wethIndex;
     uint8 public immutable olasIndex;
-
-    address public incentiveTokenAddress;
+    address public immutable incentiveTokenAddress;
 
     uint256 public immutable minimumDonation;
-    uint256 public epochRewards = 100_000_000;
+    uint256 public immutable epochRewards = 100_000_000;
     uint256 public immutable epochLength = 5;
 
     uint256 public totalDonated;
     uint256 public totalClaimed;
-    uint256 public totalUnclaimed;
-    uint256 public lastAuctionBlock = 0;
-
-
     uint8 public currentEpoch = 0;
+
     uint8 public constant maxDonatorsPerEpoch = 8;
 
-    mapping(uint8=> mapping (address=> uint256)) public epochToDonations;
-    mapping(uint8=> mapping (address=> uint256)) public epochToClaimable;
-    mapping(uint8=> mapping (address=> uint256)) public epochToClaimed;
+    mapping(uint8 => mapping(address => uint256)) public epochToDonations;
+    mapping(uint8 => mapping(address => uint256)) public epochToClaimed;
+    mapping(uint8 => uint256) public epochToTotalDonated;
+    mapping(uint8 => uint256) public epochToEndBlock;
+    mapping(uint8 => bool) public epochDonated;
 
-    mapping(uint8=> uint256) public epochToTotalClaimed;
-    mapping(uint8=> uint256) public epochToTotalUnclaimed;
-    mapping(uint8=> uint256) public epochToTotalDonated;
-
-
-    event AgentRegistered(address indexed agentAddress, uint256 indexed agentId);
     event DonationReceived(address indexed donatorAddress, uint256 indexed amount);
     event AuctionEnded(uint256 indexed epochRewards);
     event UnclaimedRewardsDonated(uint256 indexed amount);
-    event RewardsClaimed(address indexed agentAddress, uint256 indexed amount);
+    event RewardsClaimed(address indexed donatorAddress, uint256 indexed amount);
 
     constructor(
         address _owner,
@@ -74,6 +73,9 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         wethIndex = _wethIndex;
         olasIndex = _olasIndex;
         incentiveTokenAddress = _incentiveTokenAddress;
+        epochToEndBlock[currentEpoch] = block.number + epochLength;
+        permit2 = IPermit2(IBalancerRouter(_balancerRouter).getPermit2());
+        
     }
 
     receive() external payable {}
@@ -83,147 +85,165 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     }
 
     function canPlayGame() public view returns (bool) {
-        return IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochRewards;
+        return incentiveBalance() >= epochRewards;
     }
 
     function canPayTicket(uint256 claimAmount) public view returns (bool) {
-        return IERC20(incentiveTokenAddress).balanceOf(address(this)) >= claimAmount;
+        return incentiveBalance() >= claimAmount;
     }
 
     modifier onlyOncePerEpoch() {
-        require(block.number > lastAuctionBlock + epochLength, "Epoch not over");
+        require(block.number >= epochToEndBlock[currentEpoch], "Epoch not over");
         _;
-        lastAuctionBlock = block.number;
     }
 
-    // function registerAgent() external {
-    //     require(!registeredAgents[msg.sender], "Already registered");
-    //     registeredAgents[msg.sender] = true;
-    //     emit AgentRegistered(msg.sender, 0);
-    // }
-
-
-
-    // function getClaimable(address _address) external view returns (uint256) {
-    //     return claimable[_address];
-    // }
-   
-
-
-    // Function to take a value of donation and return the share of the incentives
-    // if the donation is less than the minimum donation, revert
-    // if the donation is greater than the minimum donation, return the share
-    // if the there are no donations, return all
-    function estimateTicketPercentage(uint256 donation) public view returns (uint256) {
-        require(donation >= minimumDonation, "Minimum donation not met");
-        require(canPlayGame(), "Not enough OLAS rewards to play the game");
-        if (totalDonated == 0) {
-            return 1e18;
-        }
-        return (donation * 1e18) / totalDonated;
-    }
 
     function endEpoch() external onlyOncePerEpoch nonReentrant {
+        if (currentEpoch > 0) {
+            uint8 claimEpoch = currentEpoch - 1;
+            if (!epochDonated[claimEpoch] && block.number > epochToEndBlock[claimEpoch] ) {
+                donateUnclaimedRewards(claimEpoch);
+            }
+        }
+
         storeGame();
         advanceEpoch();
         emit AuctionEnded(epochRewards);
     }
 
-    function advanceEpoch() internal {
-        if (totalUnclaimed > 0) {
-            // If there are unclaimed rewards, donate them
-            donateUnclaimedRewards();
-        }
-        // Clear the donatorList and claimableList
-        currentEpoch += 1;
-        totalUnclaimed = 0;
-        totalClaimed = 0;
-        totalDonated = 0;
-    }
-
     function storeGame() internal {
-        // Store the game data
-        epochToTotalClaimed[currentEpoch] = totalClaimed;
-        epochToTotalUnclaimed[currentEpoch] = totalUnclaimed;
         epochToTotalDonated[currentEpoch] = totalDonated;
-
     }
 
-
-
-    function donateUnclaimedRewards() internal {
-        uint256[] memory amountsIn = new uint256[](assetsInPool);
-        amountsIn[olasIndex] = totalUnclaimed;
-        IERC20 token = IERC20(incentiveTokenAddress);
-        token.approve(balancerRouter, 0);
-        token.approve(balancerRouter, totalUnclaimed);
-        IBalancerRouter(balancerRouter).donate(
-            poolId,
-            amountsIn,
-            true,
-            ""
-        );
-        totalUnclaimed = 0;
-        emit UnclaimedRewardsDonated(totalUnclaimed);
+    function advanceEpoch() internal {
+        currentEpoch += 1;
+        totalDonated = 0;
+        totalClaimed = 0;
+        epochToEndBlock[currentEpoch] = block.number + epochLength;
     }
 
-
-    function claimable(address _address) external view returns (uint256) {
-        require(currentEpoch > 0, "No epoch to claim from");
-        return epochToClaimable[currentEpoch - 1][_address];
+function donateUnclaimedRewards(uint8 epoch) internal {
+    uint256 totalEpochDonations = epochToTotalDonated[epoch];
+    if (totalEpochDonations == 0) {
+        epochDonated[epoch] = true;
+        return;
     }
+
+    uint256 unclaimedAmount = epochRewards - totalClaimed;
+    if (unclaimedAmount == 0) {
+        epochDonated[epoch] = true;
+        return;
+    }
+    require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmount, "Not enough incentive balance to donate");
+
+    uint256[] memory amountsIn = new uint256[](assetsInPool);
+    amountsIn[olasIndex] = unclaimedAmount;
+
+    IERC20 token = IERC20(incentiveTokenAddress);
+    token.approve(address(permit2), 0);
+    token.approve(address(permit2), unclaimedAmount);
+    permit2.approve(incentiveTokenAddress, balancerRouter, uint160(unclaimedAmount), uint48(block.timestamp + 1 days));
+    IBalancerRouter(balancerRouter).donate(poolId, amountsIn, true, "");
+    epochDonated[epoch] = true;
+    emit UnclaimedRewardsDonated(unclaimedAmount);
+}
+
 
     function claim() external nonReentrant {
         require(currentEpoch > 0, "No epoch to claim from");
 
-        uint256 amount = epochToClaimable[currentEpoch - 1][msg.sender];
+        uint8 claimEpoch = currentEpoch - 1;
+        require(epochToEndBlock[claimEpoch] > 0, "Epoch not ended yet");
+        require(block.number <= epochToEndBlock[claimEpoch] + (2 * epochLength), "Claim window closed");
+        require(epochToClaimed[claimEpoch][msg.sender] == 0, "Already claimed");
+
+        uint256 donation = epochToDonations[claimEpoch][msg.sender];
+        require(donation > 0, "No donation found");
+
+        uint256 totalEpochDonations = epochToTotalDonated[claimEpoch];
+        require(totalEpochDonations > 0, "No donations this epoch");
+
+        uint256 amount = (donation * epochRewards) / totalEpochDonations;
         require(amount > 0, "Nothing to claim");
-        require(canPayTicket(amount), "Not enough OLAS rewards to pay the ticket");
+        require(canPayTicket(amount), "Not enough OLAS rewards");
 
+        epochToClaimed[claimEpoch][msg.sender] = amount;
 
-        // // Use direct transfer instead of safeTransfer
         IERC20(incentiveTokenAddress).transfer(msg.sender, amount);
 
-        // we update the claimed amount
-        epochToClaimed[currentEpoch - 1][msg.sender] += amount;
-        epochToClaimable[currentEpoch - 1][msg.sender] = 0;
         totalClaimed += amount;
-        totalUnclaimed -= amount;
         emit RewardsClaimed(msg.sender, amount);
     }
 
+    function claimable(address _address) external view returns (uint256) {
+        if (currentEpoch == 0) {
+            return 0;
+        }
+        uint8 claimEpoch = currentEpoch - 1;
+        if (epochToClaimed[claimEpoch][_address] > 0) {
+            return 0;
+        }
+
+        uint256 donation = epochToDonations[claimEpoch][_address];
+        uint256 totalEpochDonations = epochToTotalDonated[claimEpoch];
+
+        if (donation == 0 || totalEpochDonations == 0) {
+            return 0;
+        }
+
+        return (donation * epochRewards) / totalEpochDonations;
+    }
+
+    function estimateTicketPercentage(uint256 donation) public view returns (uint256) {
+        require(donation >= minimumDonation, "Minimum donation not met");
+        require(canPlayGame(), "Not enough OLAS rewards to play the game");
+
+        if (totalDonated == 0) {
+            return 1e18; // full share
+        }
+
+        return (donation * 1e18) / totalDonated;
+    }
 
     function donate() external payable nonReentrant {
         require(msg.value >= minimumDonation, "Donation amount is less than the minimum donation");
         require(canPlayGame(), "Not enough OLAS rewards to play the game");
         require(epochToDonations[currentEpoch][msg.sender] == 0, "Already donated this epoch");
-        require(epochToTotalDonated[currentEpoch] < maxDonatorsPerEpoch, "Max donators reached for this epoch");
-        require(epochToClaimable[currentEpoch][msg.sender] == 0, "Have not claimed yet");
+        require(epochToTotalDonated[currentEpoch] < maxDonatorsPerEpoch, "Max donators reached");
 
         totalDonated += msg.value;
         epochToDonations[currentEpoch][msg.sender] = msg.value;
 
         emit DonationReceived(msg.sender, msg.value);
-    // }
-
     }
+
+    function topUpIncentiveBalance(uint256 amount) external {
+        require(amount > 0, "Amount must be greater than 0");
+        require(IERC20(incentiveTokenAddress).balanceOf(msg.sender) >= amount, "Not enough OLAS rewards");
+        require(IERC20(incentiveTokenAddress).allowance(msg.sender, address(this)) >= amount, "Not enough allowance");
+
+        IERC20(incentiveTokenAddress).safeTransferFrom(msg.sender, address(this), amount);
+    }
+
     function getCurrentShare(address _address) public view returns (uint256) {
         uint256 donation = epochToDonations[currentEpoch][_address];
         if (donation == 0) {
             return 0;
         }
-        return estimateTicketPercentage(donation);
+        return (donation * 1e18) / totalDonated;
     }
 
     function getEpochProgress() public view returns (uint256) {
-        return (block.number - lastAuctionBlock) * 100 / epochLength;
+        uint256 blocksSinceEnd = block.number - epochToEndBlock[currentEpoch];
+        return (blocksSinceEnd * 100) / epochLength;
     }
 
     function getBlocksRemaining() public view returns (uint256) {
-        if (block.number - lastAuctionBlock >= epochLength) {
+        uint256 blocksRemaining = epochToEndBlock[currentEpoch] - block.number;
+        if (blocksRemaining < 0 ) {
             return 0;
         }
-        return epochLength - (block.number - lastAuctionBlock);
+        return blocksRemaining;
     }
 
     function getTotalDonated() public view returns (uint256) {
@@ -237,21 +257,28 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     function getEpochRewards() public view returns (uint256) {
         return epochRewards;
     }
+
     function getCurrentEpoch() public view returns (uint8) {
         return currentEpoch;
     }
+
     function getTotalClaimed() public view returns (uint256) {
         return totalClaimed;
     }
-
-    function topUpIncentiveBalance(uint256 amount) external {
-        require(amount > 0, "Amount must be greater than 0");
-        require(IERC20(incentiveTokenAddress).balanceOf(msg.sender) >= amount, "Not enough OLAS rewards to top up");
-        require(IERC20(incentiveTokenAddress).allowance(msg.sender, address(this)) >= amount, "Not enough allowance to top up");
-        // must exceed the epoch rewards
-        require(amount >= epochRewards, "Amount must be greater than or equal to epoch rewards");
-        // transfer the tokens from the sender to this contract
-        IERC20(incentiveTokenAddress).safeTransferFrom(msg.sender, address(this), amount);
+    function getTotalUnclaimed() public view returns (uint256) {
+        if (currentEpoch == 0) {
+            return 0;
+        }
+        uint8 claimEpoch = currentEpoch - 1;
+        if (epochDonated[claimEpoch]) {
+            return 0;
+        }
+        uint256 totalEpochDonations = epochToTotalDonated[claimEpoch];
+        if (totalEpochDonations == 0) {
+            return 0;
+        }
+        return epochRewards - totalClaimed;
     }
+
 
 }

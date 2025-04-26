@@ -1,6 +1,7 @@
 # dependencies
 node_modules
 
+packages/hardhat/bin
 # yarn
 .yarn/*
 !.yarn/patches

@@ -27,7 +27,7 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
   const poolId: string = "0xaf5b7999f491c42c05b5a2ca80f1d200d617cc8c";
   const assetsInPool: number = 8;
   const wethIndex: number = 1;
-  const olasIndex: number = 4;
+  const olasIndex: number = 3;
   const incentiveTokenAddress: string = "0x54330d28ca3357f294334bdc454a032e7f353416";
 
   await deploy("DerolasStaking", {
