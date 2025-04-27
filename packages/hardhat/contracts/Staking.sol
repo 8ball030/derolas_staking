@@ -36,8 +36,8 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     address public immutable incentiveTokenAddress;
 
     uint256 public immutable minimumDonation;
-    uint256 public immutable epochRewards = 100_000_000;
-    uint256 public immutable epochLength = 5;
+    uint256 public immutable epochRewards = 8e17; // 1 OLAS
+    uint256 public immutable epochLength = 90;
 
     uint256 public totalDonated;
     uint256 public totalClaimed;
@@ -56,27 +56,6 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     event UnclaimedRewardsDonated(uint256 indexed amount);
     event RewardsClaimed(address indexed donatorAddress, uint256 indexed amount);
 
-    constructor(
-        address _owner,
-        uint256 _minimumDonation,
-        address _balancerRouter,
-        address _poolId,
-        uint8 _assetsInPool,
-        uint8 _wethIndex,
-        uint8 _olasIndex,
-        address _incentiveTokenAddress
-    ) Ownable(_owner) {
-        minimumDonation = _minimumDonation;
-        balancerRouter = _balancerRouter;
-        poolId = _poolId;
-        assetsInPool = _assetsInPool;
-        wethIndex = _wethIndex;
-        olasIndex = _olasIndex;
-        incentiveTokenAddress = _incentiveTokenAddress;
-        epochToEndBlock[currentEpoch] = block.number + epochLength;
-        permit2 = IPermit2(IBalancerRouter(_balancerRouter).getPermit2());
-        
-    }
 
     receive() external payable {}
 
@@ -97,8 +76,20 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         _;
     }
 
+    modifier gameHasStarted() {
+        require(currentEpoch > 0, "Game has not started yet");
+        _;
+    }
+
 
     function endEpoch() external onlyOncePerEpoch nonReentrant {
+        require(currentEpoch > 0, "No epoch to end");
+        require(block.number > epochToEndBlock[currentEpoch], "Epoch not over");
+        _endEpoch();
+    }
+
+
+    function _endEpoch() internal {
         if (currentEpoch > 0) {
             uint8 claimEpoch = currentEpoch - 1;
             if (!epochDonated[claimEpoch] && block.number > epochToEndBlock[claimEpoch] ) {
@@ -205,7 +196,7 @@ function donateUnclaimedRewards(uint8 epoch) internal {
         return (donation * 1e18) / totalDonated;
     }
 
-    function donate() external payable nonReentrant {
+    function donate() external payable nonReentrant gameHasStarted {
         require(msg.value >= minimumDonation, "Donation amount is less than the minimum donation");
         require(canPlayGame(), "Not enough OLAS rewards to play the game");
         require(epochToDonations[currentEpoch][msg.sender] == 0, "Already donated this epoch");
@@ -288,4 +279,26 @@ function donateUnclaimedRewards(uint8 epoch) internal {
     }
 
 
+    constructor(
+        address _owner,
+        uint256 _minimumDonation,
+        address _balancerRouter,
+        address _poolId,
+        uint8 _assetsInPool,
+        uint8 _wethIndex,
+        uint8 _olasIndex,
+        address _incentiveTokenAddress
+    ) Ownable(_owner) {
+        minimumDonation = _minimumDonation;
+        balancerRouter = _balancerRouter;
+        poolId = _poolId;
+        assetsInPool = _assetsInPool;
+        wethIndex = _wethIndex;
+        olasIndex = _olasIndex;
+        incentiveTokenAddress = _incentiveTokenAddress;
+        epochToEndBlock[currentEpoch] = block.number + epochLength;
+        permit2 = IPermit2(IBalancerRouter(_balancerRouter).getPermit2());
+        _endEpoch();
+        
+    }
 }

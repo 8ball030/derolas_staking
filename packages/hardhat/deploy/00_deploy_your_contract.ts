@@ -51,7 +51,34 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
 
   // Get the deployed contract to interact with it after deploying.
   const staking = await hre.ethers.getContract<Contract>("DerolasStaking", deployer);
-  console.log("👋 Can Currently play:", await staking.canPlayGame());
+  console.log("👋 Epoch is to begin...");
+  console.log("Staking contract deployed to:", staking.address);
+  console.log("Staking contract deployed by:", deployer);
+  // We get the currentEpoch from the contract
+  const currentEpoch = await staking.currentEpoch();
+  console.log("Current epoch is:", currentEpoch.toString());
+
+  // We get the remaining blocks from the contract
+  const remainingBlocks = await staking.getBlocksRemaining();
+  console.log("Remaining blocks are:", remainingBlocks.toString());
+  // we estimate the time left in seconds
+  const blockTime = await hre.ethers.provider.getBlock("latest");
+  if (!blockTime) {
+    throw new Error("Failed to fetch the latest block time.");
+  }
+  const blockTimeInSeconds = blockTime.timestamp;
+  const currentBlock = await hre.ethers.provider.getBlockNumber();
+  const blockTimeDifference = blockTimeInSeconds - currentBlock;
+  const secondsLeft = blockTimeDifference * 15; // assuming 15 seconds per block
+  const minutesLeft = Math.floor(secondsLeft / 60);
+  const hoursLeft = Math.floor(minutesLeft / 60);
+
+  console.log("Game ready to play. Time left in blocks:", remainingBlocks.toString());
+  console.log("Time left in seconds:", secondsLeft);
+  console.log("Time left in minutes:", minutesLeft);
+  console.log("Time left in hours:", hoursLeft);
+
+  // We then end the spoch such that play can begin
 };
 
 export default deployYourContract;

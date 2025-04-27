@@ -78,8 +78,8 @@ describe("DerolasStaking", function () {
     it("Should have the correct balancer router", async function () {
       expect(await stakingContract.balancerRouter()).to.equal(balancerRouter);
     });
-    it("Should start with epoch 0", async function () {
-      expect(await stakingContract.currentEpoch()).to.equal(0);
+    it("Should start with epoch 1", async function () {
+      expect(await stakingContract.currentEpoch()).to.equal(1);
     });
     it("Should start with no OLAS rewards", async function () {
       expect(await stakingContract.incentiveBalance()).to.equal(0);
@@ -100,10 +100,6 @@ describe("DerolasStaking", function () {
       // we expect to throw as we cannot play the game yet
       await expect(donate).to.be.revertedWith("Not enough OLAS rewards to play the game");
     });
-    it("Should start with epoch 0", async function () {
-      expect(await stakingContract.currentEpoch()).to.equal(0);
-    });
-
     it("Should start with no OLAS rewards", async function () {
       expect(await stakingContract.incentiveBalance()).to.equal(0);
     });
@@ -188,17 +184,28 @@ describe("DerolasStaking", function () {
   });
 
   describe("GameFlow", function () {
-    it("Contract starts at 0 epoch.", async function () {
+    it("Contract starts at 1 epoch.", async function () {
       // const transferAmount = await impersonateAccount(stakingContract);
       // expect(await stakingContract.incentiveBalance()).to.equal(transferAmount);
       const currentEpoch = await stakingContract.currentEpoch();
-      expect(currentEpoch).to.equal(0);
+      expect(currentEpoch).to.equal(1);
     });
     it("Can end Epoch and start a new epoch.", async function () {
       const currentEpoch = await stakingContract.currentEpoch();
+      const blockRemaining = await stakingContract.getBlocksRemaining();
+      for (let i = 0; i < Number(blockRemaining); i++) {
+        await network.provider.send("evm_mine");
+      }
       await stakingContract.endEpoch();
       const newEpoch = await stakingContract.currentEpoch();
       expect(newEpoch).to.gt(currentEpoch);
+    });
+    it("Should be able to contribute in the first epoch", async function () {
+      const donationAmount = 0.001; // 0.001 ETH
+      const donationAmountInWei = ethers.parseEther(donationAmount.toString());
+      await expect(stakingContract.donate({ value: donationAmountInWei })).to.be.not.revertedWith(
+        "Game has not started yet",
+      );
     });
     it("Cannot end epoch if not enough time has passed", async function () {
       const blockRemaining = await stakingContract.getBlocksRemaining();
@@ -207,6 +214,16 @@ describe("DerolasStaking", function () {
       await expect(stakingContract.endEpoch()).to.be.revertedWith("Epoch not over");
       const postEpoch = await stakingContract.currentEpoch();
       expect(postEpoch).to.equal(currentEpoch);
+    });
+    it("Can end Epoch and start a new epoch.", async function () {
+      const currentEpoch = await stakingContract.currentEpoch();
+      const blockRemaining = await stakingContract.getBlocksRemaining();
+      for (let i = 0; i < Number(blockRemaining); i++) {
+        await network.provider.send("evm_mine");
+      }
+      await stakingContract.endEpoch();
+      const newEpoch = await stakingContract.currentEpoch();
+      expect(newEpoch).to.gt(currentEpoch);
     });
     it("Should show contributors claimable", async function () {
       const donationAmount = 0.001; // 0.001 ETH
@@ -223,12 +240,12 @@ describe("DerolasStaking", function () {
       for (let i = 0; i < Number(blockRemaining); i++) {
         await network.provider.send("evm_mine");
       }
-      // mine the block
+      // mine the block expecting claimable from the previous epoch
       await stakingContract.endEpoch();
       const newEpoch = await stakingContract.currentEpoch();
       expect(newEpoch).to.be.eq(currentEpoch + BigInt(1));
       const claimable2 = await stakingContract.claimable(deployer.address);
-      expect(claimable2).to.be.gt(claimable);
+      expect(claimable2).to.be.eq(claimable);
     });
     it("Should allow claim", async function () {
       const [deployer] = await ethers.getSigners();
