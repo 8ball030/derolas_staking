@@ -233,12 +233,13 @@ function donateUnclaimedRewards(uint8 epoch) internal {
         if (currentEpoch == 0) {
             return 0;
         }
-        uint256 blocksRemaining = epochToEndBlock[currentEpoch] - block.number;
-        if (blocksRemaining < 0 ) {
+        if (block.number >= epochToEndBlock[currentEpoch]) {
             return 0;
         }
+        uint256 blocksRemaining = epochToEndBlock[currentEpoch] - block.number;
         return blocksRemaining;
     }
+
 
     function getTotalDonated() public view returns (uint256) {
         return totalDonated;

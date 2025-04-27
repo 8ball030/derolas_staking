@@ -56,7 +56,7 @@ const config: HardhatUserConfig = {
         blockNumber: 29397609,
       },
       chainId: 8453,
-      initialBaseFeePerGas: 0,
+      initialBaseFeePerGas: 1,
     },
     mainnet: {
       url: `https://eth-mainnet.alchemyapi.io/v2/${providerApiKey}`,
