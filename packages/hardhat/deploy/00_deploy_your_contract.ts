@@ -22,7 +22,7 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
   const { deployer } = await hre.getNamedAccounts();
   const { deploy } = hre.deployments;
 
-  const minimumDonation: number = 1000000000000000; // 0.001 ETH
+  const minimumDonation: number = 100000000000000; // 0.001 ETH
   const balancerRouter: string = "0x3f170631ed9821ca51a59d996ab095162438dc10";
   const poolId: string = "0xaf5b7999f491c42c05b5a2ca80f1d200d617cc8c";
   const assetsInPool: number = 8;
@@ -30,6 +30,8 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
   const olasIndex: number = 3;
   const incentiveTokenAddress: string = "0x54330d28ca3357f294334bdc454a032e7f353416";
 
+  console.log("👋 Deploying DerolasStaking contract...");
+  console.log("Deployer address:", deployer);
   await deploy("DerolasStaking", {
     from: deployer,
     // Contract constructor arguments

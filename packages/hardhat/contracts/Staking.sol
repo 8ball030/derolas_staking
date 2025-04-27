@@ -86,23 +86,13 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     function endEpoch() external onlyOncePerEpoch nonReentrant {
         require(currentEpoch > 0, "No epoch to end");
         require(block.number > epochToEndBlock[currentEpoch], "Epoch not over");
+        donateUnclaimedRewards();
         donateEthContribution();
-        _endEpoch();
-    }
-
-
-    function _endEpoch() internal {
-        if (currentEpoch > 0) {
-            uint8 claimEpoch = currentEpoch - 1;
-            if (!epochDonated[claimEpoch] && block.number > epochToEndBlock[claimEpoch] ) {
-                donateUnclaimedRewards(claimEpoch);
-            }
-        }
-
         storeGame();
         advanceEpoch();
         emit AuctionEnded(epochRewards);
     }
+
 
     function storeGame() internal {
         epochToTotalDonated[currentEpoch] = totalDonated;
@@ -115,7 +105,11 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         epochToEndBlock[currentEpoch] = block.number + epochLength;
     }
 
-    function donateUnclaimedRewards(uint8 epoch) internal {
+    function donateUnclaimedRewards() internal {
+        if (currentEpoch == 0) {
+            return;
+        }
+        uint8 epoch = currentEpoch - 1;
         uint256 totalEpochDonations = epochToTotalDonated[epoch];
         if (totalEpochDonations == 0) {
             epochDonated[epoch] = true;
@@ -284,6 +278,57 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         return epochRewards - totalClaimed;
     }
 
+    function forceAdvanceEpoch() external onlyOwner {
+        storeGame();
+        advanceEpoch();
+        emit AuctionEnded(0);
+    }
+
+    function getGameState(address user) external view returns (
+        uint8 _currentEpoch,
+        uint256 _epochLength,
+        uint256 _epochEndBlock,
+        uint256 _minimumDonation,
+        uint256 _blocksRemaining,
+        uint256 _epochRewards,
+        uint256 _totalDonated,
+        uint256 _totalClaimed,
+        uint256 _incentiveBalance,
+        uint256 _userCurrentDonation,
+        uint256 _userCurrentShare,
+        uint256 _userClaimable,
+        bool _hasClaimed,
+        bool _canPlayGame
+    ) {
+        _currentEpoch = currentEpoch;
+        _epochLength = epochLength;
+        _epochEndBlock = epochToEndBlock[currentEpoch];
+        _minimumDonation = minimumDonation;
+        _blocksRemaining = block.number >= _epochEndBlock ? 0 : (_epochEndBlock - block.number);
+        _epochRewards = epochRewards;
+        _totalDonated = totalDonated;
+        _totalClaimed = totalClaimed;
+        _incentiveBalance = IERC20(incentiveTokenAddress).balanceOf(address(this));
+        _userCurrentDonation = epochToDonations[currentEpoch][user];
+        _userCurrentShare = totalDonated == 0 ? 0 : (_userCurrentDonation * 1e18) / totalDonated;
+    
+        if (currentEpoch == 0) {
+            _userClaimable = 0;
+            _hasClaimed = false;
+        } else {
+            uint8 claimEpoch = currentEpoch - 1;
+            _hasClaimed = epochToClaimed[claimEpoch][user] > 0;
+            uint256 donation = epochToDonations[claimEpoch][user];
+            uint256 totalEpochDonations = epochToTotalDonated[claimEpoch];
+            if (donation == 0 || totalEpochDonations == 0 || _hasClaimed) {
+                _userClaimable = 0;
+            } else {
+                _userClaimable = (donation * epochRewards) / totalEpochDonations;
+            }
+        }
+        _canPlayGame = canPlayGame();
+    }
+
 
     constructor(
         address _owner,
@@ -304,7 +349,8 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         incentiveTokenAddress = _incentiveTokenAddress;
         epochToEndBlock[currentEpoch] = block.number + epochLength;
         permit2 = IPermit2(IBalancerRouter(_balancerRouter).getPermit2());
-        _endEpoch();
+        currentEpoch = 1;
+        epochToEndBlock[1] = block.number + epochLength;
         
     }
 }

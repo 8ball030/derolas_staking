@@ -207,6 +207,12 @@ describe("DerolasStaking", function () {
         "Game has not started yet",
       );
     });
+
+    it("Should allow the gamestate to be retrieved", async function () {
+      const [deployer] = await ethers.getSigners();
+      const gameState = await stakingContract.getGameState(deployer.address);
+      expect(gameState).to.be.not.revertedWith("Game has not started yet");
+    });
     it("Cannot end epoch if not enough time has passed", async function () {
       const blockRemaining = await stakingContract.getBlocksRemaining();
       expect(blockRemaining).to.be.gt(0);
