@@ -55,7 +55,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     event AuctionEnded(uint256 indexed epochRewards);
     event UnclaimedRewardsDonated(uint256 indexed amount);
     event RewardsClaimed(address indexed donatorAddress, uint256 indexed amount);
-    event DerolasBought(uint256 indexed amount);
+    event EthDonatedToBalancer(uint256 indexed amount);
 
 
     receive() external payable {}
@@ -150,7 +150,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         uint256[] memory amountsIn = new uint256[](assetsInPool);
         amountsIn[wethIndex] = contributionAmount;
         IBalancerRouter(balancerRouter).donate{value: contributionAmount}(poolId, amountsIn, true, "");
-        emit DerolasBought(contributionAmount);
+        emit EthDonatedToBalancer(contributionAmount);
     }
 
 
@@ -238,11 +238,6 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         return (donation * 1e18) / totalDonated;
     }
 
-    function getEpochProgress() public view returns (uint256) {
-        uint256 blocksSinceEnd = block.number - epochToEndBlock[currentEpoch];
-        return (blocksSinceEnd * 100) / epochLength;
-    }
-
     function getBlocksRemaining() public view returns (uint256) {
         if (currentEpoch == 0) {
             return 0;
@@ -257,10 +252,6 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
 
     function getTotalDonated() public view returns (uint256) {
         return totalDonated;
-    }
-
-    function currentIncentiveBalance() public view returns (uint256) {
-        return IERC20(incentiveTokenAddress).balanceOf(address(this));
     }
 
     function getEpochRewards() public view returns (uint256) {
