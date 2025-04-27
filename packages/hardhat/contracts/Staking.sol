@@ -55,6 +55,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     event AuctionEnded(uint256 indexed epochRewards);
     event UnclaimedRewardsDonated(uint256 indexed amount);
     event RewardsClaimed(address indexed donatorAddress, uint256 indexed amount);
+    event DerolasBought(uint256 indexed amount);
 
 
     receive() external payable {}
@@ -85,6 +86,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     function endEpoch() external onlyOncePerEpoch nonReentrant {
         require(currentEpoch > 0, "No epoch to end");
         require(block.number > epochToEndBlock[currentEpoch], "Epoch not over");
+        donateEthContribution();
         _endEpoch();
     }
 
@@ -113,31 +115,43 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         epochToEndBlock[currentEpoch] = block.number + epochLength;
     }
 
-function donateUnclaimedRewards(uint8 epoch) internal {
-    uint256 totalEpochDonations = epochToTotalDonated[epoch];
-    if (totalEpochDonations == 0) {
+    function donateUnclaimedRewards(uint8 epoch) internal {
+        uint256 totalEpochDonations = epochToTotalDonated[epoch];
+        if (totalEpochDonations == 0) {
+            epochDonated[epoch] = true;
+            return;
+        }
+
+        uint256 unclaimedAmount = epochRewards - totalClaimed;
+        if (unclaimedAmount == 0) {
+            epochDonated[epoch] = true;
+            return;
+        }
+        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmount, "Not enough incentive balance to donate");
+
+        uint256[] memory amountsIn = new uint256[](assetsInPool);
+        amountsIn[olasIndex] = unclaimedAmount;
+
+        IERC20 token = IERC20(incentiveTokenAddress);
+        token.approve(address(permit2), 0);
+        token.approve(address(permit2), unclaimedAmount);
+        permit2.approve(incentiveTokenAddress, balancerRouter, uint160(unclaimedAmount), uint48(block.timestamp + 1 days));
+        IBalancerRouter(balancerRouter).donate(poolId, amountsIn, true, "");
         epochDonated[epoch] = true;
-        return;
+        emit UnclaimedRewardsDonated(unclaimedAmount);
     }
-
-    uint256 unclaimedAmount = epochRewards - totalClaimed;
-    if (unclaimedAmount == 0) {
-        epochDonated[epoch] = true;
-        return;
+    function donateEthContribution() internal {
+        // require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmount, "Not enough incentive balance to donate");
+        // we instead check the whole balance of the contract
+        uint256 contributionAmount = address(this).balance;
+        if (contributionAmount == 0) {
+            return;
+        }
+        uint256[] memory amountsIn = new uint256[](assetsInPool);
+        amountsIn[wethIndex] = contributionAmount;
+        IBalancerRouter(balancerRouter).donate{value: contributionAmount}(poolId, amountsIn, true, "");
+        emit DerolasBought(contributionAmount);
     }
-    require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmount, "Not enough incentive balance to donate");
-
-    uint256[] memory amountsIn = new uint256[](assetsInPool);
-    amountsIn[olasIndex] = unclaimedAmount;
-
-    IERC20 token = IERC20(incentiveTokenAddress);
-    token.approve(address(permit2), 0);
-    token.approve(address(permit2), unclaimedAmount);
-    permit2.approve(incentiveTokenAddress, balancerRouter, uint160(unclaimedAmount), uint48(block.timestamp + 1 days));
-    IBalancerRouter(balancerRouter).donate(poolId, amountsIn, true, "");
-    epochDonated[epoch] = true;
-    emit UnclaimedRewardsDonated(unclaimedAmount);
-}
 
 
     function claim() external nonReentrant {
