@@ -7,7 +7,7 @@ import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 const deployedContracts = {
   8453: {
     DerolasStaking: {
-      address: "0x905Ad472d7eeB94ed1Fc29D8ff4B53FD4D5a5Eb4",
+      address: "0xb9b0c96e4E7181926D2A7ed331C9C346dfa59b4D",
       abi: [
         {
           inputs: [
