@@ -37,6 +37,13 @@ interface IPermit2 {
     function approve(address token, address spender, uint160 amount, uint48 expiration) external;
 }
 
+// Staking interface
+interface IStaking {
+    /// @dev Gets activity checker address.
+    /// @return Activity checker address.
+    function activityChecker() external view returns (address);
+}
+
 
 contract DerolasStaking {
     event OwnerUpdated(address indexed owner);
@@ -209,6 +216,8 @@ contract DerolasStaking {
         require(_stakingInstance != address(0), "Zero address");
         // Check for non-zero address staking instance address
         require(stakingInstance == address(0), "Already set");
+        // Check for activity checker pointing to this contract
+        require(IStaking(stakingInstance).activityChecker() == address(this), "Wrong staking instance");
 
         stakingInstance = _stakingInstance;
 
