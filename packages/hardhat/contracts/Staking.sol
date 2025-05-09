@@ -39,9 +39,21 @@ interface IPermit2 {
 
 // Staking interface
 interface IStaking {
+    /// @dev Checkpoint to allocate rewards up until a current time.
+    /// @return serviceIds Staking service Ids (excluding evicted ones within a current epoch).
+    /// @return eligibleServiceIds Set of reward-eligible service Ids.
+    /// @return eligibleServiceRewards Corresponding set of reward-eligible service rewards.
+    /// @return evictServiceIds Evicted service Ids.
+    function checkpoint() external returns (uint256[] memory serviceIds, uint256[] memory eligibleServiceIds,
+        uint256[] memory eligibleServiceRewards, uint256[] memory evictServiceIds);
+
     /// @dev Gets activity checker address.
     /// @return Activity checker address.
     function activityChecker() external view returns (address);
+
+    /// @dev Gets timestamp of the last staking checkpoint.
+    /// @return Timestamp of the last staking checkpoint.
+    function tsCheckpoint() external returns (uint256);
 }
 
 
@@ -53,7 +65,8 @@ contract DerolasStaking {
     event UnclaimedRewardsDonated(uint256 indexed amount);
     event RewardsClaimed(address indexed donatorAddress, uint256 indexed amount);
     event StakingInstanceUpdated(address indexed stakingInstance);
-    event ParamsUpdated(uint256 indexed nextEpoch, uint256 epochRewards, uint256 epochLength, uint256 maxDonatorsPerEpoch);
+    event ParamsUpdated(uint256 indexed nextEpoch, uint256 epochRewards, uint256 epochLength,
+        uint256 maxDonatorsPerEpoch, uint256 maxCheckpointDelay);
 
     address public immutable permit2;
 
@@ -86,6 +99,7 @@ contract DerolasStaking {
     mapping(uint256 => uint256) public epochTotalClaimed;
     mapping(uint256 => uint256) public epochLengths;
     mapping(uint256 => uint256) public epochMaxNumDonators;
+    mapping(uint256 => uint256) public epochMaxCheckpointDelay;
     mapping(uint256 => uint256) public epochEndTimes;
 
     constructor(
@@ -97,7 +111,8 @@ contract DerolasStaking {
         uint256 _incentiveTokenIndex,
         uint256 _epochRewards,
         uint256 _epochLength,
-        uint256 _maxDonatorsPerEpoch
+        uint256 _maxDonatorsPerEpoch,
+        uint256 _maxCheckpointDelay
     ) {
         // TODO checks for zero values / addresses?
         minimumDonation = _minimumDonation;
@@ -110,6 +125,7 @@ contract DerolasStaking {
         epochRewards[1] = _epochRewards;
         epochLengths[1] = _epochLength;
         epochMaxNumDonators[1] = _maxDonatorsPerEpoch;
+        epochMaxCheckpointDelay[1] = _maxCheckpointDelay;
 
         epochEndTimes[0] = block.timestamp;
         owner = msg.sender;
@@ -143,6 +159,10 @@ contract DerolasStaking {
         uint256 claimEpoch = curEpoch - 1;
         require(block.timestamp > epochEndTimes[claimEpoch] + epochLengths[curEpoch], "Epoch not over");
 
+        // Check for staking checkpoint time difference
+        uint256 lastStakingCheckpointDelay = block.timestamp - IStaking(stakingInstance).tsCheckpoint();
+        require(lastStakingCheckpointDelay <= epochMaxCheckpointDelay[curEpoch], "Staking epoch end time difference overflow");
+
         _donateUnclaimedRewards(claimEpoch);
 
         uint256 curTotalDonated = totalDonated;
@@ -155,11 +175,16 @@ contract DerolasStaking {
         totalDonated = 0;
         totalClaimed = 0;
 
+        // Check for updated params not being requested for the next epoch
         if (!paramsUpdateRequested) {
             epochRewards[nextEpoch] = epochRewards[curEpoch];
             epochLengths[nextEpoch] = epochLengths[curEpoch];
             epochMaxNumDonators[nextEpoch] = epochMaxNumDonators[curEpoch];
+            epochMaxCheckpointDelay[nextEpoch] = epochMaxCheckpointDelay[curEpoch];
         }
+
+        // Call staking checkpoint
+        IStaking(stakingInstance).checkpoint();
 
         emit AuctionEnded(curEpoch, curTotalDonated, curTotalClaimed, epochRewards[curEpoch]);
 
@@ -224,7 +249,12 @@ contract DerolasStaking {
         emit StakingInstanceUpdated(_stakingInstance);
     }
 
-    function changeParams(uint256 newEpochRewards, uint256 newEpochLength, uint256 newMaxDonatorsPerEpoch) external {
+    function changeParams(
+        uint256 newEpochRewards,
+        uint256 newEpochLength,
+        uint256 newMaxDonatorsPerEpoch,
+        uint256 newMaxCheckpointDelay
+    ) external {
         // Check current contract owner
         require(msg.sender == owner, "Unauthorized account");
 
@@ -232,9 +262,10 @@ contract DerolasStaking {
         epochRewards[nextEpoch] = newEpochRewards;
         epochLengths[nextEpoch] = newEpochLength;
         epochMaxNumDonators[nextEpoch] = newMaxDonatorsPerEpoch;
+        epochMaxCheckpointDelay[nextEpoch] = newMaxCheckpointDelay;
         paramsUpdateRequested = true;
 
-        emit ParamsUpdated(nextEpoch, newEpochRewards, newEpochLength, newMaxDonatorsPerEpoch);
+        emit ParamsUpdated(nextEpoch, newEpochRewards, newEpochLength, newMaxDonatorsPerEpoch, newMaxCheckpointDelay);
     }
 
     function claimable(address account) external view returns (uint256) {
