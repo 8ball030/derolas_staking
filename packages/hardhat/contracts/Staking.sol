@@ -56,47 +56,54 @@ interface IStaking {
     function tsCheckpoint() external returns (uint256);
 }
 
+struct EpochPoint {
+    uint256 availableRewards;
+    uint256 totalDonated;
+    uint256 totalClaimed;
+    uint256 length;
+    uint256 maxNumDonators;
+    uint256 maxCheckpointDelay;
+    uint256 minDonations;
+    uint256 endTime;
+}
+
 
 contract DerolasStaking {
     event OwnerUpdated(address indexed owner);
     event DonationReceived(address indexed donatorAddress, uint256 indexed amount);
     event AuctionEnded(uint256 indexed epochCounter, uint256 indexed totalEpochDonations,
-        uint256 indexed totalEpochClaimed, uint256 epochRewards);
+        uint256 indexed totalEpochClaimed, uint256 availableRewards);
     event UnclaimedRewardsDonated(uint256 indexed amount);
     event RewardsClaimed(address indexed donatorAddress, uint256 indexed amount);
     event StakingInstanceUpdated(address indexed stakingInstance);
-    event ParamsUpdated(uint256 indexed nextEpoch, uint256 epochRewards, uint256 epochLength,
+    event ParamsUpdated(uint256 indexed nextEpoch, uint256 availableRewards, uint256 epochLength,
         uint256 maxDonatorsPerEpoch, uint256 maxCheckpointDelay, uint256 minDonation);
 
-    address public immutable permit2;
-    address public immutable balancerRouter;
-    address public immutable poolId;
     uint256 public immutable assetsInPool;
     uint256 public immutable incentiveTokenIndex;
     address public immutable incentiveTokenAddress;
+    address public immutable balancerRouter;
+    address public immutable poolId;
+    address public immutable permit2;
 
+    // Epoch counter
     uint256 public currentEpoch = 1;
-
     // Staking instance address
     address public stakingInstance;
     // Contract owner address
     address public owner;
-
+    // Params update request status
     bool public paramsUpdateRequested;
     
     // Reentrancy lock
     uint256 internal _locked = 1;
 
+    // Mapping of epoch => (mapping of donator => amount donated)
     mapping(uint256 => mapping(address => uint256)) public epochToDonations;
+    // Mapping of epoch => (mapping of claimer => amount claimed)
     mapping(uint256 => mapping(address => uint256)) public epochToClaimed;
-    mapping(uint256 => uint256) public epochRewards;
-    mapping(uint256 => uint256) public epochTotalDonated;
-    mapping(uint256 => uint256) public epochTotalClaimed;
-    mapping(uint256 => uint256) public epochLengths;
-    mapping(uint256 => uint256) public epochMaxNumDonators;
-    mapping(uint256 => uint256) public epochMaxCheckpointDelay;
-    mapping(uint256 => uint256) public epochMinDonations;
-    mapping(uint256 => uint256) public epochEndTimes;
+    // Mapping of epoch => epoch points
+    mapping(uint256 => EpochPoint) public epochPoints;
 
     constructor(
         uint256 _minDonation,
@@ -105,7 +112,7 @@ contract DerolasStaking {
         uint256 _assetsInPool,
         address _incentiveTokenAddress,
         uint256 _incentiveTokenIndex,
-        uint256 _epochRewards,
+        uint256 _availableRewards,
         uint256 _epochLength,
         uint256 _maxDonatorsPerEpoch,
         uint256 _maxCheckpointDelay
@@ -117,18 +124,18 @@ contract DerolasStaking {
         incentiveTokenAddress = _incentiveTokenAddress;
         incentiveTokenIndex = _incentiveTokenIndex;
         permit2 = IBalancerRouter(_balancerRouter).getPermit2();
-        epochRewards[1] = _epochRewards;
-        epochLengths[1] = _epochLength;
-        epochMaxNumDonators[1] = _maxDonatorsPerEpoch;
-        epochMaxCheckpointDelay[1] = _maxCheckpointDelay;
-        epochMinDonations[1] = _minDonation;
+        epochPoints[1].availableRewards = _availableRewards;
+        epochPoints[1].length = _epochLength;
+        epochPoints[1].maxNumDonators = _maxDonatorsPerEpoch;
+        epochPoints[1].maxCheckpointDelay = _maxCheckpointDelay;
+        epochPoints[1].minDonations = _minDonation;
 
-        epochEndTimes[0] = block.timestamp;
+        epochPoints[0].endTime = block.timestamp;
         owner = msg.sender;
     }
 
     function _donateUnclaimedRewards(uint256 claimEpoch) internal {
-        uint256 unclaimedAmount = epochRewards[claimEpoch] - epochTotalClaimed[claimEpoch];
+        uint256 unclaimedAmount = epochPoints[claimEpoch].availableRewards - epochPoints[claimEpoch].totalClaimed;
         if (unclaimedAmount == 0) {
             return;
         }
@@ -154,11 +161,11 @@ contract DerolasStaking {
 
         uint256 curEpoch = currentEpoch;
         uint256 claimEpoch = curEpoch - 1;
-        require(block.timestamp > epochEndTimes[claimEpoch] + epochLengths[curEpoch], "Epoch not over");
+        require(block.timestamp > epochPoints[curEpoch].endTime+ epochPoints[curEpoch].length, "Epoch not over");
 
         // Check for staking checkpoint time difference
         uint256 lastStakingCheckpointDelay = block.timestamp - IStaking(stakingInstance).tsCheckpoint();
-        require(lastStakingCheckpointDelay <= epochMaxCheckpointDelay[curEpoch], "Staking epoch end time difference overflow");
+        require(lastStakingCheckpointDelay <= epochPoints[curEpoch].maxCheckpointDelay, "Staking epoch end time difference overflow");
 
         _donateUnclaimedRewards(claimEpoch);
 
@@ -166,20 +173,21 @@ contract DerolasStaking {
 
         // Check for updated params not being requested for the next epoch
         if (!paramsUpdateRequested) {
-            epochRewards[nextEpoch] = epochRewards[curEpoch];
-            epochLengths[nextEpoch] = epochLengths[curEpoch];
-            epochMaxNumDonators[nextEpoch] = epochMaxNumDonators[curEpoch];
-            epochMaxCheckpointDelay[nextEpoch] = epochMaxCheckpointDelay[curEpoch];
+            epochPoints[nextEpoch].availableRewards = epochPoints[curEpoch].availableRewards;
+            epochPoints[nextEpoch].length= epochPoints[curEpoch].length;
+            epochPoints[nextEpoch].maxNumDonators = epochPoints[curEpoch].maxNumDonators;
+            epochPoints[nextEpoch].maxCheckpointDelay = epochPoints[curEpoch].maxCheckpointDelay;
         }
 
         // Update state variables
-        epochEndTimes[curEpoch] = block.timestamp;
+        epochPoints[curEpoch].endTime = block.timestamp;
         currentEpoch = nextEpoch;
 
         // Call staking checkpoint
         IStaking(stakingInstance).checkpoint();
 
-        emit AuctionEnded(curEpoch, epochTotalDonated[curEpoch], epochTotalClaimed[claimEpoch], epochRewards[curEpoch]);
+        emit AuctionEnded(curEpoch, epochPoints[curEpoch].totalDonated, epochPoints[claimEpoch].totalClaimed,
+            epochPoints[curEpoch].availableRewards);
 
         _locked = 1;
     }
@@ -190,21 +198,21 @@ contract DerolasStaking {
         _locked = 2;
 
         uint256 claimEpoch = currentEpoch - 1;
-        require(epochEndTimes[claimEpoch] > 0, "Epoch not ended yet");
+        require(epochPoints[claimEpoch].endTime > 0, "Epoch not ended yet");
         require(epochToClaimed[claimEpoch][msg.sender] == 0, "Already claimed");
 
         uint256 donation = epochToDonations[claimEpoch][msg.sender];
         require(donation > 0, "No donation found");
 
-        uint256 totalEpochDonations = epochTotalDonated[claimEpoch];
+        uint256 totalEpochDonations = epochPoints[claimEpoch].totalDonated;
         require(totalEpochDonations > 0, "No donations this epoch");
 
-        uint256 amount = (donation * epochRewards[claimEpoch]) / totalEpochDonations;
+        uint256 amount = (donation * epochPoints[claimEpoch].availableRewards) / totalEpochDonations;
         require(amount > 0, "Nothing to claim");
         require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= amount, "Not enough rewards");
 
         epochToClaimed[claimEpoch][msg.sender] = amount;
-        epochTotalClaimed[claimEpoch] += amount;
+        epochPoints[claimEpoch].totalClaimed += amount;
 
         SafeTransferLib.safeTransfer(incentiveTokenAddress, msg.sender, amount);
 
@@ -253,11 +261,11 @@ contract DerolasStaking {
         require(msg.sender == owner, "Unauthorized account");
 
         uint256 nextEpoch = currentEpoch + 1;
-        epochRewards[nextEpoch] = newEpochRewards;
-        epochLengths[nextEpoch] = newEpochLength;
-        epochMaxNumDonators[nextEpoch] = newMaxDonatorsPerEpoch;
-        epochMaxCheckpointDelay[nextEpoch] = newMaxCheckpointDelay;
-        epochMinDonations[nextEpoch] = minDonation;
+        epochPoints[nextEpoch].availableRewards = newEpochRewards;
+        epochPoints[nextEpoch].length = newEpochLength;
+        epochPoints[nextEpoch].maxNumDonators = newMaxDonatorsPerEpoch;
+        epochPoints[nextEpoch].maxCheckpointDelay = newMaxCheckpointDelay;
+        epochPoints[nextEpoch].minDonations = minDonation;
         paramsUpdateRequested = true;
 
         emit ParamsUpdated(nextEpoch, newEpochRewards, newEpochLength, newMaxDonatorsPerEpoch, newMaxCheckpointDelay,
@@ -267,22 +275,22 @@ contract DerolasStaking {
     function claimable(address account) external view returns (uint256) {
         uint256 claimEpoch = currentEpoch - 1;
         uint256 donation = epochToDonations[claimEpoch][account];
-        uint256 totalEpochDonations = epochTotalDonated[claimEpoch];
+        uint256 totalEpochDonations = epochPoints[claimEpoch].totalDonated;
 
         if (donation == 0 || totalEpochDonations == 0) {
             return 0;
         }
 
-        return (donation * epochRewards[claimEpoch]) / totalEpochDonations;
+        return (donation * epochPoints[claimEpoch].availableRewards) / totalEpochDonations;
     }
 
     function estimateTicketPercentage(uint256 donation) external view returns (uint256) {
         uint256 curEpoch = currentEpoch;
-        require(donation >= epochMinDonations[curEpoch], "Minimum donation not met");
-        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochRewards[curEpoch],
+        require(donation >= epochPoints[curEpoch].minDonations, "Minimum donation not met");
+        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochPoints[curEpoch].availableRewards,
             "Not enough rewards to play the game");
 
-        uint256 totalEpochDonations = epochTotalDonated[curEpoch];
+        uint256 totalEpochDonations = epochPoints[curEpoch].totalDonated;
         if (totalEpochDonations == 0) {
             return 1e18; // full share
         }
@@ -296,14 +304,14 @@ contract DerolasStaking {
         _locked = 2;
 
         uint256 curEpoch = currentEpoch;
-        require(msg.value >= epochMinDonations[curEpoch], "Donation amount is less than the minimum donation");
-        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochRewards[curEpoch],
+        require(msg.value >= epochPoints[curEpoch].minDonations, "Donation amount is less than the minimum donation");
+        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochPoints[curEpoch].availableRewards,
             "Not enough rewards to play the game");
 
         require(epochToDonations[curEpoch][msg.sender] == 0, "Already donated this epoch");
-        require(epochTotalDonated[curEpoch] < epochMaxNumDonators[curEpoch], "Max donators reached");
+        require(epochPoints[curEpoch].totalDonated < epochPoints[curEpoch].maxNumDonators, "Max donators reached");
 
-        epochTotalDonated[curEpoch] += msg.value;
+        epochPoints[curEpoch].totalDonated += msg.value;
         epochToDonations[curEpoch][msg.sender] = msg.value;
 
         emit DonationReceived(msg.sender, msg.value);
@@ -323,21 +331,21 @@ contract DerolasStaking {
     function getCurrentShare(address account) external view returns (uint256) {
         uint256 curEpoch = currentEpoch;
         uint256 donation = epochToDonations[curEpoch][account];
-        return (donation * 1e18) / epochTotalDonated[curEpoch];
+        return (donation * 1e18) / epochPoints[curEpoch].totalDonated;
     }
 
     /// @dev Gets seconds since last epoch end.
     function getSecondsSinceEpochEnd() external view returns (uint256) {
-        return block.timestamp - epochEndTimes[currentEpoch - 1];
+        return block.timestamp - epochPoints[currentEpoch - 1].endTime;
     }
 
     /// @dev Gets remaining epoch length progress.
     function getRemainingEpochLength() public view returns (uint256) {
         uint256 curEpoch = currentEpoch;
         // Get seconds since last epoch end
-        uint256 secondsSinceEpochEnd = block.timestamp - epochEndTimes[curEpoch - 1];
+        uint256 secondsSinceEpochEnd = block.timestamp - epochPoints[curEpoch - 1].endTime;
 
-        uint256 curEpochLength = epochLengths[curEpoch];
+        uint256 curEpochLength = epochPoints[curEpoch].length;
         // If more seconds have passed compared to defined epoch length, limit by epoch length
         if (secondsSinceEpochEnd > curEpochLength) {
             secondsSinceEpochEnd = curEpochLength;
@@ -350,9 +358,9 @@ contract DerolasStaking {
     function getEpochProgress() external view returns (uint256) {
         uint256 curEpoch = currentEpoch;
         // Get seconds since last epoch end
-        uint256 secondsSinceEpochEnd = block.timestamp - epochEndTimes[currentEpoch - 1];
+        uint256 secondsSinceEpochEnd = block.timestamp - epochPoints[curEpoch - 1].endTime;
 
-        uint256 curEpochLength = epochLengths[curEpoch];
+        uint256 curEpochLength = epochPoints[curEpoch].length;
         // If more seconds have passed compared to defined epoch length, limit by epoch length
         if (secondsSinceEpochEnd > curEpochLength) {
             secondsSinceEpochEnd = curEpochLength;
@@ -363,7 +371,7 @@ contract DerolasStaking {
 
     function getTotalUnclaimed() external view returns (uint256) {
         uint256 claimEpoch = currentEpoch - 1;
-        return epochRewards[claimEpoch] - epochTotalClaimed[claimEpoch];
+        return epochPoints[claimEpoch].availableRewards - epochPoints[claimEpoch].totalClaimed;
     }
 
     /// @dev Gets service multisig nonces.
