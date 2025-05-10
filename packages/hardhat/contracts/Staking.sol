@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity ^0.8.30;
 
 import {SafeTransferLib} from "./libraries/SafeTransferLib.sol";
 
@@ -60,26 +60,21 @@ interface IStaking {
 contract DerolasStaking {
     event OwnerUpdated(address indexed owner);
     event DonationReceived(address indexed donatorAddress, uint256 indexed amount);
-    event AuctionEnded(uint256 indexed epochCounter, uint256 indexed totalDonated, uint256 indexed totalClaimed,
-        uint256 epochRewards);
+    event AuctionEnded(uint256 indexed epochCounter, uint256 indexed totalEpochDonations,
+        uint256 indexed totalEpochClaimed, uint256 epochRewards);
     event UnclaimedRewardsDonated(uint256 indexed amount);
     event RewardsClaimed(address indexed donatorAddress, uint256 indexed amount);
     event StakingInstanceUpdated(address indexed stakingInstance);
     event ParamsUpdated(uint256 indexed nextEpoch, uint256 epochRewards, uint256 epochLength,
-        uint256 maxDonatorsPerEpoch, uint256 maxCheckpointDelay);
+        uint256 maxDonatorsPerEpoch, uint256 maxCheckpointDelay, uint256 minDonation);
 
     address public immutable permit2;
-
     address public immutable balancerRouter;
     address public immutable poolId;
     uint256 public immutable assetsInPool;
     uint256 public immutable incentiveTokenIndex;
     address public immutable incentiveTokenAddress;
 
-    uint256 public immutable minimumDonation;
-
-    uint256 public totalDonated;
-    uint256 public totalClaimed;
     uint256 public currentEpoch = 1;
 
     // Staking instance address
@@ -100,10 +95,11 @@ contract DerolasStaking {
     mapping(uint256 => uint256) public epochLengths;
     mapping(uint256 => uint256) public epochMaxNumDonators;
     mapping(uint256 => uint256) public epochMaxCheckpointDelay;
+    mapping(uint256 => uint256) public epochMinDonations;
     mapping(uint256 => uint256) public epochEndTimes;
 
     constructor(
-        uint256 _minimumDonation,
+        uint256 _minDonation,
         address _balancerRouter,
         address _poolId,
         uint256 _assetsInPool,
@@ -115,7 +111,6 @@ contract DerolasStaking {
         uint256 _maxCheckpointDelay
     ) {
         // TODO checks for zero values / addresses?
-        minimumDonation = _minimumDonation;
         balancerRouter = _balancerRouter;
         poolId = _poolId;
         assetsInPool = _assetsInPool;
@@ -126,17 +121,19 @@ contract DerolasStaking {
         epochLengths[1] = _epochLength;
         epochMaxNumDonators[1] = _maxDonatorsPerEpoch;
         epochMaxCheckpointDelay[1] = _maxCheckpointDelay;
+        epochMinDonations[1] = _minDonation;
 
         epochEndTimes[0] = block.timestamp;
         owner = msg.sender;
     }
 
-    function _donateUnclaimedRewards(uint256 epoch) internal {
-        uint256 unclaimedAmount = epochRewards[epoch] - epochTotalClaimed[epoch];
+    function _donateUnclaimedRewards(uint256 claimEpoch) internal {
+        uint256 unclaimedAmount = epochRewards[claimEpoch] - epochTotalClaimed[claimEpoch];
         if (unclaimedAmount == 0) {
             return;
         }
 
+        // This must never happen
         require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmount, "Not enough incentive balance to donate");
 
         uint256[] memory amountsIn = new uint256[](assetsInPool);
@@ -165,15 +162,7 @@ contract DerolasStaking {
 
         _donateUnclaimedRewards(claimEpoch);
 
-        uint256 curTotalDonated = totalDonated;
-        uint256 curTotalClaimed = totalClaimed;
-        epochTotalDonated[curEpoch] = curTotalDonated;
-        epochTotalClaimed[curEpoch] = curTotalClaimed;
-        epochEndTimes[curEpoch] = block.timestamp;
         uint256 nextEpoch = curEpoch + 1;
-        currentEpoch = nextEpoch;
-        totalDonated = 0;
-        totalClaimed = 0;
 
         // Check for updated params not being requested for the next epoch
         if (!paramsUpdateRequested) {
@@ -183,10 +172,14 @@ contract DerolasStaking {
             epochMaxCheckpointDelay[nextEpoch] = epochMaxCheckpointDelay[curEpoch];
         }
 
+        // Update state variables
+        epochEndTimes[curEpoch] = block.timestamp;
+        currentEpoch = nextEpoch;
+
         // Call staking checkpoint
         IStaking(stakingInstance).checkpoint();
 
-        emit AuctionEnded(curEpoch, curTotalDonated, curTotalClaimed, epochRewards[curEpoch]);
+        emit AuctionEnded(curEpoch, epochTotalDonated[curEpoch], epochTotalClaimed[claimEpoch], epochRewards[curEpoch]);
 
         _locked = 1;
     }
@@ -211,10 +204,10 @@ contract DerolasStaking {
         require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= amount, "Not enough rewards");
 
         epochToClaimed[claimEpoch][msg.sender] = amount;
+        epochTotalClaimed[claimEpoch] += amount;
 
         SafeTransferLib.safeTransfer(incentiveTokenAddress, msg.sender, amount);
 
-        totalClaimed += amount;
         emit RewardsClaimed(msg.sender, amount);
 
         _locked = 1;
@@ -253,7 +246,8 @@ contract DerolasStaking {
         uint256 newEpochRewards,
         uint256 newEpochLength,
         uint256 newMaxDonatorsPerEpoch,
-        uint256 newMaxCheckpointDelay
+        uint256 newMaxCheckpointDelay,
+        uint256 minDonation
     ) external {
         // Check current contract owner
         require(msg.sender == owner, "Unauthorized account");
@@ -263,9 +257,11 @@ contract DerolasStaking {
         epochLengths[nextEpoch] = newEpochLength;
         epochMaxNumDonators[nextEpoch] = newMaxDonatorsPerEpoch;
         epochMaxCheckpointDelay[nextEpoch] = newMaxCheckpointDelay;
+        epochMinDonations[nextEpoch] = minDonation;
         paramsUpdateRequested = true;
 
-        emit ParamsUpdated(nextEpoch, newEpochRewards, newEpochLength, newMaxDonatorsPerEpoch, newMaxCheckpointDelay);
+        emit ParamsUpdated(nextEpoch, newEpochRewards, newEpochLength, newMaxDonatorsPerEpoch, newMaxCheckpointDelay,
+            minDonation);
     }
 
     function claimable(address account) external view returns (uint256) {
@@ -281,15 +277,17 @@ contract DerolasStaking {
     }
 
     function estimateTicketPercentage(uint256 donation) external view returns (uint256) {
-        require(donation >= minimumDonation, "Minimum donation not met");
-        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochRewards[currentEpoch],
+        uint256 curEpoch = currentEpoch;
+        require(donation >= epochMinDonations[curEpoch], "Minimum donation not met");
+        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochRewards[curEpoch],
             "Not enough rewards to play the game");
 
-        if (totalDonated == 0) {
+        uint256 totalEpochDonations = epochTotalDonated[curEpoch];
+        if (totalEpochDonations == 0) {
             return 1e18; // full share
         }
 
-        return (donation * 1e18) / totalDonated;
+        return (donation * 1e18) / totalEpochDonations;
     }
 
     function donate() external payable {
@@ -297,15 +295,15 @@ contract DerolasStaking {
         require(_locked == 1, "ReentrancyGuard");
         _locked = 2;
 
-        require(msg.value >= minimumDonation, "Donation amount is less than the minimum donation");
-        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochRewards[currentEpoch],
+        uint256 curEpoch = currentEpoch;
+        require(msg.value >= epochMinDonations[curEpoch], "Donation amount is less than the minimum donation");
+        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochRewards[curEpoch],
             "Not enough rewards to play the game");
 
-        uint256 curEpoch = currentEpoch;
         require(epochToDonations[curEpoch][msg.sender] == 0, "Already donated this epoch");
         require(epochTotalDonated[curEpoch] < epochMaxNumDonators[curEpoch], "Max donators reached");
 
-        totalDonated += msg.value;
+        epochTotalDonated[curEpoch] += msg.value;
         epochToDonations[curEpoch][msg.sender] = msg.value;
 
         emit DonationReceived(msg.sender, msg.value);
@@ -323,8 +321,9 @@ contract DerolasStaking {
     }
 
     function getCurrentShare(address account) external view returns (uint256) {
-        uint256 donation = epochToDonations[currentEpoch][account];
-        return (donation * 1e18) / totalDonated;
+        uint256 curEpoch = currentEpoch;
+        uint256 donation = epochToDonations[curEpoch][account];
+        return (donation * 1e18) / epochTotalDonated[curEpoch];
     }
 
     /// @dev Gets seconds since last epoch end.
