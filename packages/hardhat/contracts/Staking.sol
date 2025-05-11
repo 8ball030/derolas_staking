@@ -102,7 +102,7 @@ contract DerolasStaking {
     event StakingInstanceUpdated(address indexed stakingInstance);
     event ParamsUpdated(uint256 indexed nextEpoch, uint256 availableRewards, uint256 epochLength,
         uint256 maxCheckpointDelay, uint256 minDonation);
-    event DonationSkipped(uint256 indexed insufficientBalance, uint256 indexed expected);
+    event DonationAdjusted(uint256 indexed insufficientBalance, uint256 indexed expected);
 
     // Assets in pool
     uint256 public immutable assetsInPool;
@@ -180,11 +180,18 @@ contract DerolasStaking {
             return;
         }
 
+
         uint256 balance = IERC20(incentiveTokenAddress).balanceOf(address(this));
         if (balance < unclaimedAmount) {
-            emit DonationSkipped(balance, unclaimedAmount);
-            return;
+           emit DonationAdjusted(balance, unclaimedAmount);
+           unclaimedAmount = balance;
         }
+
+        if (balance == 0) {
+           return;
+        }
+
+
 
         uint256[] memory amountsIn = new uint256[](assetsInPool);
         amountsIn[incentiveTokenIndex] = unclaimedAmount;
