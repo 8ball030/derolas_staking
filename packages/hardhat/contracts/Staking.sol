@@ -82,7 +82,6 @@ struct EpochPoint {
     uint256 totalDonated;        // Total amount donated in this epoch
     uint256 totalClaimed;        // Total amount claimed in this epoch
     uint256 length;              // Length of this epoch in seconds
-    uint256 maxNumDonators;      // Maximum number of donators allowed in this epoch
     uint256 maxCheckpointDelay;  // Maximum allowed delay between checkpoints
     uint256 minDonations;        // Minimum donation amount for this epoch
     uint256 endTime;             // End time of this epoch
@@ -95,13 +94,14 @@ contract DerolasStaking {
     // Events
     event OwnerUpdated(address indexed owner);
     event DonationReceived(address indexed donatorAddress, uint256 indexed amount);
+    event TopUpIncentiveReceived(uint256 indexed amount);
     event AuctionEnded(uint256 indexed epochCounter, uint256 indexed totalEpochDonations,
         uint256 indexed totalEpochClaimed, uint256 availableRewards);
     event UnclaimedRewardsDonated(uint256 indexed amount);
     event RewardsClaimed(address indexed donatorAddress, uint256 indexed amount);
     event StakingInstanceUpdated(address indexed stakingInstance);
     event ParamsUpdated(uint256 indexed nextEpoch, uint256 availableRewards, uint256 epochLength,
-        uint256 maxDonatorsPerEpoch, uint256 maxCheckpointDelay, uint256 minDonation);
+        uint256 maxCheckpointDelay, uint256 minDonation);
 
     // Assets in pool
     uint256 public immutable assetsInPool;
@@ -144,7 +144,6 @@ contract DerolasStaking {
     /// @param _incentiveTokenIndex Incentive token index.
     /// @param _availableRewards Available rewards.
     /// @param _epochLength Epoch length.
-    /// @param _maxDonatorsPerEpoch Maximum donators per epoch.
     /// @param _maxCheckpointDelay Maximum checkpoint delay.
     constructor(
         uint256 _minDonation,
@@ -155,7 +154,6 @@ contract DerolasStaking {
         uint256 _incentiveTokenIndex,
         uint256 _availableRewards,
         uint256 _epochLength,
-        uint256 _maxDonatorsPerEpoch,
         uint256 _maxCheckpointDelay
     ) {
         balancerRouter = _balancerRouter;
@@ -166,7 +164,6 @@ contract DerolasStaking {
         permit2 = IBalancerRouter(_balancerRouter).getPermit2();
         epochPoints[1].availableRewards = _availableRewards;
         epochPoints[1].length = _epochLength;
-        epochPoints[1].maxNumDonators = _maxDonatorsPerEpoch;
         epochPoints[1].maxCheckpointDelay = _maxCheckpointDelay;
         epochPoints[1].minDonations = _minDonation;
 
@@ -182,6 +179,7 @@ contract DerolasStaking {
             return;
         }
 
+        // TODO This must be resolved to not revert
         require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmount, "Not enough incentive balance to donate");
 
         uint256[] memory amountsIn = new uint256[](assetsInPool);
@@ -215,7 +213,6 @@ contract DerolasStaking {
         if (!paramsUpdateRequested) {
             epochPoints[nextEpoch].availableRewards = epochPoints[curEpoch].availableRewards;
             epochPoints[nextEpoch].length = epochPoints[curEpoch].length;
-            epochPoints[nextEpoch].maxNumDonators = epochPoints[curEpoch].maxNumDonators;
             epochPoints[nextEpoch].maxCheckpointDelay = epochPoints[curEpoch].maxCheckpointDelay;
         }
 
@@ -287,13 +284,11 @@ contract DerolasStaking {
     /// @dev Changes epoch parameters.
     /// @param newEpochRewards New epoch rewards.
     /// @param newEpochLength New epoch length.
-    /// @param newMaxDonatorsPerEpoch New maximum donators per epoch.
     /// @param newMaxCheckpointDelay New maximum checkpoint delay.
     /// @param minDonation New minimum donation.
     function changeParams(
         uint256 newEpochRewards,
         uint256 newEpochLength,
-        uint256 newMaxDonatorsPerEpoch,
         uint256 newMaxCheckpointDelay,
         uint256 minDonation
     ) external {
@@ -302,13 +297,11 @@ contract DerolasStaking {
         uint256 nextEpoch = currentEpoch + 1;
         epochPoints[nextEpoch].availableRewards = newEpochRewards;
         epochPoints[nextEpoch].length = newEpochLength;
-        epochPoints[nextEpoch].maxNumDonators = newMaxDonatorsPerEpoch;
         epochPoints[nextEpoch].maxCheckpointDelay = newMaxCheckpointDelay;
         epochPoints[nextEpoch].minDonations = minDonation;
         paramsUpdateRequested = true;
 
-        emit ParamsUpdated(nextEpoch, newEpochRewards, newEpochLength, newMaxDonatorsPerEpoch, newMaxCheckpointDelay,
-            minDonation);
+        emit ParamsUpdated(nextEpoch, newEpochRewards, newEpochLength, newMaxCheckpointDelay, minDonation);
     }
 
     /// @dev Gets claimable rewards.
@@ -323,7 +316,11 @@ contract DerolasStaking {
             return 0;
         }
 
-        return (donation * epochPoints[claimEpoch].availableRewards) / totalEpochDonations;
+        // Calculate rewards
+        uint256 amount = (donation * epochPoints[claimEpoch].availableRewards) / totalEpochDonations;
+        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= amount, "Not enough rewards");
+
+        return amount;
     }
 
     /// @dev Estimates ticket percentage.
@@ -355,7 +352,6 @@ contract DerolasStaking {
             "Not enough rewards to play the game");
 
         require(epochToDonations[curEpoch][msg.sender] == 0, "Already donated this epoch");
-        require(epochPoints[curEpoch].totalDonated < epochPoints[curEpoch].maxNumDonators, "Max donators reached");
 
         epochPoints[curEpoch].totalDonated += msg.value;
         epochToDonations[curEpoch][msg.sender] = msg.value;
@@ -369,10 +365,9 @@ contract DerolasStaking {
     /// @param amount Amount to top up.
     function topUpIncentiveBalance(uint256 amount) external {
         require(amount > 0, "Amount must be greater than 0");
-        require(IERC20(incentiveTokenAddress).balanceOf(msg.sender) >= amount, "Not enough rewards");
-        require(IERC20(incentiveTokenAddress).allowance(msg.sender, address(this)) >= amount, "Not enough allowance");
-
         SafeTransferLib.safeTransferFrom(incentiveTokenAddress, msg.sender, address(this), amount);
+
+        emit TopUpIncentiveReceived(amount);
     }
 
     /// @dev Gets current share.
@@ -391,17 +386,17 @@ contract DerolasStaking {
     }
 
     /// @dev Gets remaining epoch length progress.
-    /// @return Remaining epoch length progress.
-    function getRemainingEpochLength() public view returns (uint256) {
+    /// @return Remaining epoch length progress and extended epoch time, if epoch length was reached.
+    function getRemainingEpochLength() public view returns (uint256, uint256) {
         uint256 curEpoch = currentEpoch;
         uint256 secondsSinceEpochEnd = block.timestamp - epochPoints[curEpoch - 1].endTime;
 
         uint256 curEpochLength = epochPoints[curEpoch].length;
         if (secondsSinceEpochEnd > curEpochLength) {
-            secondsSinceEpochEnd = curEpochLength;
+            return (0, secondsSinceEpochEnd - curEpochLength);
+        } else {
+            return (curEpochLength - secondsSinceEpochEnd, 0);
         }
-
-        return secondsSinceEpochEnd - curEpochLength;
     }
 
     /// @dev Gets epoch progress.

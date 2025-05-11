@@ -15,7 +15,6 @@ describe("DerolasStaking", function () {
 
   const MIN_DONATION = ethers.parseEther("0.1");
   const EPOCH_LENGTH = 7 * 24 * 60 * 60; // 7 days
-  const MAX_DONATORS_PER_EPOCH = 100;
   const MAX_CHECKPOINT_DELAY = 24 * 60 * 60; // 1 day
   const AVAILABLE_REWARDS = ethers.parseEther("1000");
   const ASSETS_IN_POOL = 2;
@@ -50,7 +49,6 @@ describe("DerolasStaking", function () {
       INCENTIVE_TOKEN_INDEX,
       AVAILABLE_REWARDS,
       EPOCH_LENGTH,
-      MAX_DONATORS_PER_EPOCH,
       MAX_CHECKPOINT_DELAY,
     );
     await staking.waitForDeployment();
@@ -142,11 +140,10 @@ describe("DerolasStaking", function () {
     it("Should allow owner to update parameters", async function () {
       const newRewards = ethers.parseEther("2000");
       const newLength = EPOCH_LENGTH * 2;
-      const newMaxDonators = MAX_DONATORS_PER_EPOCH * 2;
       const newMaxDelay = MAX_CHECKPOINT_DELAY * 2;
       const newMinDonation = MIN_DONATION.mul(2);
 
-      await staking.changeParams(newRewards, newLength, newMaxDonators, newMaxDelay, newMinDonation);
+      await staking.changeParams(newRewards, newLength, newMaxDelay, newMinDonation);
 
       // End current epoch to apply new parameters
       await time.increase(EPOCH_LENGTH + 1);
@@ -156,16 +153,13 @@ describe("DerolasStaking", function () {
       const epoch2 = await staking.epochPoints(2);
       expect(epoch2.availableRewards).to.equal(newRewards);
       expect(epoch2.length).to.equal(newLength);
-      expect(epoch2.maxNumDonators).to.equal(newMaxDonators);
       expect(epoch2.maxCheckpointDelay).to.equal(newMaxDelay);
       expect(epoch2.minDonations).to.equal(newMinDonation);
     });
 
     it("Should prevent non-owner from updating parameters", async function () {
       await expect(
-        staking
-          .connect(user1)
-          .changeParams(AVAILABLE_REWARDS, EPOCH_LENGTH, MAX_DONATORS_PER_EPOCH, MAX_CHECKPOINT_DELAY, MIN_DONATION),
+        staking.connect(user1).changeParams(AVAILABLE_REWARDS, EPOCH_LENGTH, MAX_CHECKPOINT_DELAY, MIN_DONATION),
       ).to.be.revertedWith("Unauthorized account");
     });
   });

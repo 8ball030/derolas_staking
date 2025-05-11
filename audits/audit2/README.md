@@ -12,7 +12,7 @@ The audit focused on contracts in repo <br>
 cd derolas_staking/packages/hardhat
 yarn
 ```
-### Afrer yarn
+### After yarn
 ```
 cd derolas_staking/packages/hardhat
 yarn # failed
@@ -22,7 +22,7 @@ hardhat@2.23.0
 Ok to proceed? (y) n
 npm ERR! canceled
 ```
-[]
+[x] npm run compile
 
 ## Ai-based report
 No accepted issue.
@@ -39,7 +39,7 @@ AI based report: [AI-report.md](https://github.com/8ball030/derolas_staking/blob
         uint256 totalDonated;        // Total amount donated in this epoch
         Incorrect attempt to add and compare funds with the number of donors.
 ```
-[]
+[x] Needed removal, fixed
 
 ### Medium issue. DoS in checkpoint (EndEpoch)
 ```
@@ -66,6 +66,7 @@ require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmoun
 +question:
 IStaking(stakingInstance).checkpoint(); is safe for un-revert in EndEpoch?
 ```
+[] Checkpoint is safe as it does not revert, pending resolution on balance...
 
 ### Low issue. claimable vs claim
 ```
@@ -73,7 +74,7 @@ The view function `claimable` does not take into account all the limitations of 
 Probably for emergency events like lack of funds, a revert is better than a return of zero.
 Ref: require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= amount, "Not enough rewards");
 ```
-[]
+[x] Fixed
 
 ### Low issue. Overchecked 
 ```
@@ -87,7 +88,7 @@ Ref: require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= amount, "
         SafeTransferLib.safeTransferFrom(incentiveTokenAddress, msg.sender, address(this), amount);
     }
 ```
-[]
+[x] Fixed
 
 ### Notes. Reset to zero lead to loss information?
 ```
@@ -104,7 +105,7 @@ function getRemainingEpochLength() public view returns (uint256) {
         return secondsSinceEpochEnd - curEpochLength;
     }
 ```
-[]
+[x] Fixed
 
 
 
