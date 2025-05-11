@@ -32,8 +32,8 @@ AI based report: [AI-report.md](https://github.com/8ball030/derolas_staking/blob
 ### Critical issue. maxNumDonators incorrect in donate
 ```
         require(epochPoints[curEpoch].totalDonated < epochPoints[curEpoch].maxNumDonators, "Max donators reached"); // Bug!
-
-        epochPoints[curEpoch].totalDonated += msg.value; // Bug!
+        epochPoints[curEpoch].totalDonated += msg.value; 
+        
         Logical comparison error.
         uint256 maxNumDonators;      // Maximum number of donators allowed in this epoch
         uint256 totalDonated;        // Total amount donated in this epoch
