@@ -87,6 +87,26 @@ struct EpochPoint {
     uint256 endTime;             // End time of this epoch
 }
 
+
+/// @dev Game state struct.
+/// @notice Stores information about the current game state
+struct GameState {
+    uint256 epochLength;
+    uint256 currentEpoch;
+    uint256 epochEndTime;
+    uint256 minimalDonation;
+    uint256 secondsRemaining;
+    uint256 epochRewards;
+    uint256 totalDonated;
+    uint256 totalClaimed;
+    uint256 incentiveBalance;
+    uint256 userCurrentDonation;
+    uint256 userCurrentShare;
+    uint256 userClaimable;
+    bool hasClaimed;
+    bool canPlayGame;
+}
+
 /// @title Derolas Staking Contract
 /// @notice Main contract for managing staking, donations, and rewards
 /// @dev This contract handles the staking mechanism, donation collection, and reward distribution
@@ -456,4 +476,49 @@ contract DerolasStaking {
 
     /// @dev Receive function.
     receive() external payable {}
+    /// @param user User address.
+    /// @return state game state.
+    function getGameState(address user) external view returns (GameState memory state) {
+        uint256 curEpoch = currentEpoch;
+        EpochPoint storage ep = epochPoints[curEpoch];
+    
+        state.epochLength = ep.length;
+        state.currentEpoch = curEpoch;
+        state.minimalDonation = ep.minDonations;
+        state.epochRewards = ep.availableRewards;
+        state.totalDonated = ep.totalDonated;
+        state.totalClaimed = ep.totalClaimed;
+    
+        uint256 epochStart = epochPoints[curEpoch - 1].endTime;
+        state.epochEndTime = epochStart + ep.length;
+    
+        if (block.timestamp < state.epochEndTime) {
+            state.secondsRemaining = state.epochEndTime - block.timestamp;
+        }
+    
+        state.incentiveBalance = IERC20(incentiveTokenAddress).balanceOf(address(this));
+        state.userCurrentDonation = epochToDonations[curEpoch][user];
+    
+        if (state.totalDonated > 0 && state.userCurrentDonation > 0) {
+            state.userCurrentShare = (state.userCurrentDonation * 1e18) / state.totalDonated;
+        }
+    
+        uint256 claimEpoch = curEpoch - 1;
+        state.hasClaimed = epochToClaimed[claimEpoch][user] > 0;
+    
+        if (epochPoints[claimEpoch].endTime > 0) {
+            uint256 donation = epochToDonations[claimEpoch][user];
+            uint256 totalDon = epochPoints[claimEpoch].totalDonated;
+            if (donation > 0 && totalDon > 0) {
+                state.userClaimable = (donation * epochPoints[claimEpoch].availableRewards) / totalDon;
+            }
+        }
+    
+        state.canPlayGame = (
+            state.userCurrentDonation == 0 &&
+            state.incentiveBalance >= state.epochRewards &&
+            block.timestamp < state.epochEndTime
+        );
+    }
+
 }
