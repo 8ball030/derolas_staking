@@ -30,18 +30,26 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
   const olasIndex: number = 3;
   const incentiveTokenAddress: string = "0x54330d28ca3357f294334bdc454a032e7f353416";
 
+  const epochLength: number = 90; // 90 seconds
+  const maxCheckpointDelay: number = 30; // 30 seconds
+  const availableRewards: number = 800000000; // 0.8 OLAS tokens
+
   await deploy("DerolasStaking", {
     from: deployer,
     // Contract constructor arguments
     args: [
-      deployer,
       minimumDonation,
       balancerRouter,
       poolId,
       assetsInPool,
-      wethIndex,
-      olasIndex,
+
       incentiveTokenAddress,
+      olasIndex,
+      wethIndex,
+
+      availableRewards,
+      epochLength,
+      maxCheckpointDelay,
     ],
     log: true,
     // autoMine: can be passed to the deploy function to make the deployment process faster on local networks by
@@ -59,7 +67,7 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
   console.log("Current epoch is:", currentEpoch.toString());
 
   // We get the remaining blocks from the contract
-  const remainingBlocks = await staking.getBlocksRemaining();
+  const remainingBlocks = await staking.getRemainingEpochLength();
   console.log("Remaining blocks are:", remainingBlocks.toString());
   // we estimate the time left in seconds
   const blockTime = await hre.ethers.provider.getBlock("latest");
