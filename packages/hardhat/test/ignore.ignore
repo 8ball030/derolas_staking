@@ -1,11 +1,11 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { Contract } from "ethers";
+import { AddressLike, Contract } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("DerolasStaking", function () {
-  let staking: Contract;
+  let staking: DerolasStaking & { deploymentTransaction(): ContractTransactionResponse };
   let incentiveToken: Contract;
   let balancerRouter: Contract;
   let stakingInstance: Contract;
@@ -25,36 +25,50 @@ describe("DerolasStaking", function () {
 
     // Deploy mock incentive token
     const MockERC20 = await ethers.getContractFactory("MockERC20");
-    incentiveToken = await MockERC20.deploy("Incentive Token", "INC");
+    incentiveToken = (await MockERC20.deploy("Incentive Token", "INC")) as unknown as Contract;
     await incentiveToken.waitForDeployment();
 
-    // Deploy mock balancer router
-    const MockBalancerRouter = await ethers.getContractFactory("MockBalancerRouter");
-    balancerRouter = await MockBalancerRouter.deploy();
-    await balancerRouter.waitForDeployment();
+    console.log("Deploying DerolasStaking contract...");
+    // // Deploy mock balancer router
+    // const MockBalancerRouter = await ethers.getContractFactory("MockBalancerRouter");
+    // balancerRouter = (await MockBalancerRouter.deploy()) as unknown as Contract;
+    // await balancerRouter.waitForDeployment();
 
-    // Deploy mock staking instance
-    const MockStakingInstance = await ethers.getContractFactory("MockStakingInstance");
-    stakingInstance = await MockStakingInstance.deploy();
-    await stakingInstance.waitForDeployment();
+    // // Deploy mock staking instance
+    // const MockStakingInstance = await ethers.getContractFactory("MockStakingInstance");
+    // stakingInstance = (await MockStakingInstance.deploy()) as unknown as Contract;
+    // await stakingInstance.waitForDeployment();
 
+    const minimumDonation: number = 1000000000000000; // 0.001 ETH
+    const balancerRouter: string = "0x3f170631ed9821ca51a59d996ab095162438dc10";
+    const poolId: string = "0xaf5b7999f491c42c05b5a2ca80f1d200d617cc8c";
+    const assetsInPool: number = 8;
+    const wethIndex: number = 1;
+    const olasIndex: number = 3;
+    const incentiveTokenAddress: string = "0x54330d28ca3357f294334bdc454a032e7f353416";
+    const epochLength: number = 90; // 90 seconds
+    const maxCheckpointDelay: number = 30; // 30 seconds
+    const availableRewards: number = 800000000; // 0.8 OLAS tokens
     // Deploy staking contract
+    console.log("Deploying DerolasStaking contract...");
     const DerolasStaking = await ethers.getContractFactory("DerolasStaking");
-    staking = await DerolasStaking.deploy(
-      MIN_DONATION,
-      balancerRouter.address,
-      ethers.ZeroAddress, // poolId
-      ASSETS_IN_POOL,
-      incentiveToken.address,
-      INCENTIVE_TOKEN_INDEX,
-      AVAILABLE_REWARDS,
-      EPOCH_LENGTH,
-      MAX_CHECKPOINT_DELAY,
-    );
+    staking = await DerolasStaking.deploy({
+      minimumDonation,
+      balancerRouter,
+      poolId,
+      assetsInPool,
+      incentiveTokenAddress,
+      olasIndex,
+      availableRewards,
+      epochLength,
+      maxCheckpointDelay,
+      );
+
     await staking.waitForDeployment();
+    console.log("DerolasStaking contract deployed at:", staking.target);
 
     // Set staking instance
-    await staking.setStakingInstance(stakingInstance.address);
+    // await staking.setStakingInstance(stakingInstance.address);
 
     // Mint incentive tokens to the staking contract
     await incentiveToken.mint(staking.address, AVAILABLE_REWARDS);
@@ -62,6 +76,7 @@ describe("DerolasStaking", function () {
 
   describe("Deployment", function () {
     it("Should set the right owner", async function () {
+      console.log("Staking contract owner:", await staking.owner());
       expect(await staking.owner()).to.equal(owner.address);
     });
 

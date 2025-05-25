@@ -25,7 +25,7 @@ interface IBalancerRouter {
 
 /// @title ERC20 Interface
 /// @notice Interface for interacting with ERC20 tokens
-interface IERC20 {
+interface ILocalERC20 {
     /// @dev Gets the amount of tokens owned by a specified account.
     /// @param account Account address.
     /// @return Amount of tokens owned.
@@ -81,7 +81,7 @@ struct EpochPoint {
     uint256 availableRewards;    // Total rewards available for this epoch
     uint256 totalDonated;        // Total amount donated in this epoch
     uint256 totalClaimed;        // Total amount claimed in this epoch
-    uint256 length;              // Length of this epoch in seconds
+    uint256 length;              // Length of this epoch in blocks
     uint256 maxCheckpointDelay;  // Maximum allowed delay between checkpoints
     uint256 minDonations;        // Minimum donation amount for this epoch
     uint256 endTime;             // End time of this epoch
@@ -124,10 +124,17 @@ contract DerolasStaking {
         uint256 maxCheckpointDelay, uint256 minDonation);
     event UnclaimedRewardsAdjusted(uint256 indexed insufficientBalance, uint256 indexed expected);
 
+    event DonationReceivedEth(address indexed donatorAddress, uint256 indexed amount);
+
+    // event AuctionEnded(uint256 indexed epochRewards);
+    // event DerolasBought(uint256 indexed amount);
+
     // Assets in pool
     uint256 public immutable assetsInPool;
     // Incentive token index
     uint256 public immutable incentiveTokenIndex;
+    // WETH index
+    uint256 public immutable wethIndex; // Assuming WETH is always at index 0
     // Incentive token address
     address public immutable incentiveTokenAddress;
     // Balancer router address
@@ -156,11 +163,6 @@ contract DerolasStaking {
     // Mapping of epoch => epoch points
     mapping(uint256 => EpochPoint) public epochPoints;
 
-    event DonationReceived(address indexed donatorAddress, uint256 indexed amount);
-    event AuctionEnded(uint256 indexed epochRewards);
-    event UnclaimedRewardsDonated(uint256 indexed amount);
-    event RewardsClaimed(address indexed donatorAddress, uint256 indexed amount);
-    event DerolasBought(uint256 indexed amount);
 
     /// @dev DerolasStaking constructor.
     /// @param _minDonation Minimum epoch donation.
@@ -179,6 +181,7 @@ contract DerolasStaking {
         uint256 _assetsInPool,
         address _incentiveTokenAddress,
         uint256 _incentiveTokenIndex,
+        uint256 _wethIndex,
         uint256 _availableRewards,
         uint256 _epochLength,
         uint256 _maxCheckpointDelay
@@ -188,13 +191,14 @@ contract DerolasStaking {
         assetsInPool = _assetsInPool;
         incentiveTokenAddress = _incentiveTokenAddress;
         incentiveTokenIndex = _incentiveTokenIndex;
+        wethIndex = _wethIndex;
         permit2 = IBalancerRouter(_balancerRouter).getPermit2();
         epochPoints[1].availableRewards = _availableRewards;
         epochPoints[1].length = _epochLength;
         epochPoints[1].maxCheckpointDelay = _maxCheckpointDelay;
         epochPoints[1].minDonations = _minDonation;
 
-        epochPoints[0].endTime = block.timestamp;
+        epochPoints[0].endTime = block.number + _epochLength; // Set end time for epoch 0 to current block number + epoch length
         owner = msg.sender;
     }
 
@@ -208,7 +212,7 @@ contract DerolasStaking {
         }
 
         // Check contract balance
-        uint256 balance = IERC20(incentiveTokenAddress).balanceOf(address(this));
+        uint256 balance = ILocalERC20(incentiveTokenAddress).balanceOf(address(this));
         if (balance < unclaimedAmount) {
             emit UnclaimedRewardsAdjusted(balance, unclaimedAmount);
 
@@ -226,12 +230,13 @@ contract DerolasStaking {
         uint256[] memory amountsIn = new uint256[](assetsInPool);
         amountsIn[incentiveTokenIndex] = unclaimedAmount;
 
-        IERC20(incentiveTokenAddress).approve(permit2, 0);
-        IERC20(incentiveTokenAddress).approve(permit2, unclaimedAmount);
+
+        ILocalERC20(incentiveTokenAddress).approve(permit2, 0);
+        ILocalERC20(incentiveTokenAddress).approve(permit2, unclaimedAmount);
         IPermit2(permit2).approve(incentiveTokenAddress, balancerRouter, uint160(unclaimedAmount), uint48(block.timestamp + 1 days));
         IBalancerRouter(balancerRouter).donate(poolId, amountsIn, true, "");
-
         emit UnclaimedRewardsDonated(unclaimedAmount);
+        epochPoints[claimEpoch].totalDonated += unclaimedAmount;
     }
 
     /// @dev Ends an epoch.
@@ -242,15 +247,11 @@ contract DerolasStaking {
 
         uint256 curEpoch = currentEpoch;
         uint256 claimEpoch = curEpoch - 1;
-        require(block.timestamp > epochPoints[curEpoch].endTime + epochPoints[curEpoch].length, "Epoch not over");
+        // require(epochPoints[claimEpoch].endTime < block.number, "Epoch not over");
+        require(epochPoints[claimEpoch].endTime > 0, "Epoch not over");
 
-        uint256 lastStakingCheckpointDelay = block.timestamp - IStaking(stakingInstance).tsCheckpoint();
-        require(lastStakingCheckpointDelay <= epochPoints[curEpoch].maxCheckpointDelay, "Staking epoch end time difference overflow");
-
-
-
-    function endEpoch() external onlyOncePerEpoch nonReentrant {
-   
+        // uint256 lastStakingCheckpointDelay = block.timestamp - IStaking(stakingInstance).tsCheckpoint();
+        // require(lastStakingCheckpointDelay <= epochPoints[curEpoch].maxCheckpointDelay, "Staking epoch end time difference overflow");
 
 
         uint256 nextEpoch = curEpoch + 1;
@@ -264,48 +265,42 @@ contract DerolasStaking {
         epochPoints[curEpoch].endTime = block.timestamp;
         currentEpoch = nextEpoch;
 
-        IStaking(stakingInstance).checkpoint();
+        // IStaking(stakingInstance).checkpoint();
 
 
         emit AuctionEnded(curEpoch, epochPoints[curEpoch].totalDonated, epochPoints[claimEpoch].totalClaimed,
             epochPoints[curEpoch].availableRewards);
         _donateUnclaimedRewards(claimEpoch);
+        _donateEthContribution();
         _locked = 1;
     }
     
-    function advanceEpoch() internal {
-        currentEpoch += 1;
-        totalDonated = 0;
-        totalClaimed = 0;
-        epochToEndBlock[currentEpoch] = block.number + epochLength;
-    }
+    // function donateUnclaimedRewards(uint8 epoch) internal {
+    //     uint256 totalEpochDonations = epochToTotalDonated[epoch];
+    //     if (totalEpochDonations == 0) {
+    //         epochDonated[epoch] = true;
+    //         return;
+    //     }
 
-    function donateUnclaimedRewards(uint8 epoch) internal {
-        uint256 totalEpochDonations = epochToTotalDonated[epoch];
-        if (totalEpochDonations == 0) {
-            epochDonated[epoch] = true;
-            return;
-        }
+    //     uint256 unclaimedAmount = epochRewards - totalClaimed;
+    //     if (unclaimedAmount == 0) {
+    //         epochDonated[epoch] = true;
+    //         return;
+    //     }
+    //     require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmount, "Not enough incentive balance to donate");
 
-        uint256 unclaimedAmount = epochRewards - totalClaimed;
-        if (unclaimedAmount == 0) {
-            epochDonated[epoch] = true;
-            return;
-        }
-        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmount, "Not enough incentive balance to donate");
+    //     uint256[] memory amountsIn = new uint256[](assetsInPool);
+    //     amountsIn[olasIndex] = unclaimedAmount;
 
-        uint256[] memory amountsIn = new uint256[](assetsInPool);
-        amountsIn[olasIndex] = unclaimedAmount;
-
-        IERC20 token = IERC20(incentiveTokenAddress);
-        token.approve(address(permit2), 0);
-        token.approve(address(permit2), unclaimedAmount);
-        permit2.approve(incentiveTokenAddress, balancerRouter, uint160(unclaimedAmount), uint48(block.timestamp + 1 days));
-        IBalancerRouter(balancerRouter).donate(poolId, amountsIn, true, "");
-        epochDonated[epoch] = true;
-        emit UnclaimedRewardsDonated(unclaimedAmount);
-    }
-    function donateEthContribution() internal {
+    //     IERC20 token = IERC20(incentiveTokenAddress);
+    //     token.approve(address(permit2), 0);
+    //     token.approve(address(permit2), unclaimedAmount);
+    //     permit2.approve(incentiveTokenAddress, balancerRouter, uint160(unclaimedAmount), uint48(block.timestamp + 1 days));
+    //     IBalancerRouter(balancerRouter).donate(poolId, amountsIn, true, "");
+    //     epochDonated[epoch] = true;
+    //     emit UnclaimedRewardsDonated(unclaimedAmount);
+    // }
+    function _donateEthContribution() internal {
         // require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmount, "Not enough incentive balance to donate");
         // we instead check the whole balance of the contract
         uint256 contributionAmount = address(this).balance;
@@ -315,7 +310,7 @@ contract DerolasStaking {
         uint256[] memory amountsIn = new uint256[](assetsInPool);
         amountsIn[wethIndex] = contributionAmount;
         IBalancerRouter(balancerRouter).donate{value: contributionAmount}(poolId, amountsIn, true, "");
-        emit DerolasBought(contributionAmount);
+        emit DonationReceivedEth(msg.sender, contributionAmount);
     }
 
 
@@ -336,7 +331,7 @@ contract DerolasStaking {
 
         uint256 amount = (donation * epochPoints[claimEpoch].availableRewards) / totalEpochDonations;
         require(amount > 0, "Nothing to claim");
-        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= amount, "Not enough rewards");
+        require(ILocalERC20(incentiveTokenAddress).balanceOf(address(this)) >= amount, "Not enough rewards");
 
         epochToClaimed[claimEpoch][msg.sender] = amount;
         epochPoints[claimEpoch].totalClaimed += amount;
@@ -410,9 +405,8 @@ contract DerolasStaking {
 
         // Calculate rewards
         uint256 amount = (donation * epochPoints[claimEpoch].availableRewards) / totalEpochDonations;
-        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= amount, "Not enough rewards");
-
-        return amount;
+        require(ILocalERC20(incentiveTokenAddress).balanceOf(address(this)) >= amount, "Not enough rewards");
+        return amount - epochToClaimed[claimEpoch][account];
     }
 
     /// @dev Estimates ticket percentage.
@@ -421,7 +415,7 @@ contract DerolasStaking {
     function estimateTicketPercentage(uint256 donation) external view returns (uint256) {
         uint256 curEpoch = currentEpoch;
         require(donation >= epochPoints[curEpoch].minDonations, "Minimum donation not met");
-        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochPoints[curEpoch].availableRewards,
+        require(ILocalERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochPoints[curEpoch].availableRewards,
             "Not enough rewards to play the game");
 
         uint256 totalEpochDonations = epochPoints[curEpoch].totalDonated;
@@ -440,7 +434,7 @@ contract DerolasStaking {
 
         uint256 curEpoch = currentEpoch;
         require(msg.value >= epochPoints[curEpoch].minDonations, "Donation amount is less than the minimum donation");
-        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochPoints[curEpoch].availableRewards,
+        require(ILocalERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochPoints[curEpoch].availableRewards,
             "Not enough rewards to play the game");
 
         require(epochToDonations[curEpoch][msg.sender] == 0, "Already donated this epoch");
@@ -490,17 +484,17 @@ contract DerolasStaking {
             return (curEpochLength - secondsSinceEpochEnd, 0);
         }
 
-        if (block.number >= epochToEndBlock[currentEpoch]) {
-            return 0;
-        }
-        uint256 blocksRemaining = epochToEndBlock[currentEpoch] - block.number;
-        return blocksRemaining;
+        // if (block.number >= epochToEndBlock[currentEpoch]) {
+        //     return 0;
+        // }
+        // uint256 blocksRemaining = epochToEndBlock[currentEpoch] - block.number;
+        // return blocksRemaining;
     }
 
 
-    function getTotalDonated() public view returns (uint256) {
-        return totalDonated;
-    }
+    // function getTotalDonated() public view returns (uint256) {
+    //     return totalDonated;
+    // }
 
     /// @dev Gets epoch progress.
     /// @return Epoch progress.
@@ -520,7 +514,7 @@ contract DerolasStaking {
     /// @return Total unclaimed rewards.
     function getTotalUnclaimed() external view returns (uint256) {
         uint256 claimEpoch = currentEpoch - 1;
-        return epochPoints[claimEpoch].availableRewards - epochPoints[claimEpoch].totalClaimed;
+        return epochPoints[claimEpoch].availableRewards - epochPoints[claimEpoch].totalClaimed - epochPoints[claimEpoch].totalDonated;
     }
 
     /// @dev Gets service multisig nonces.
@@ -568,7 +562,7 @@ contract DerolasStaking {
             state.secondsRemaining = state.epochEndTime - block.timestamp;
         }
     
-        state.incentiveBalance = IERC20(incentiveTokenAddress).balanceOf(address(this));
+        state.incentiveBalance = ILocalERC20(incentiveTokenAddress).balanceOf(address(this));
         state.userCurrentDonation = epochToDonations[curEpoch][user];
     
         if (state.totalDonated > 0 && state.userCurrentDonation > 0) {
@@ -593,4 +587,27 @@ contract DerolasStaking {
         );
     }
 
+
+    // Functions for testing purposes
+    /// @dev Gets incentiveBalance.
+    function incentiveBalance() external view returns (uint256) {
+        return ILocalERC20(incentiveTokenAddress).balanceOf(address(this));
+    }
+
+    /// @dev Gets current min donation.
+    function minimumDonation() external view returns (uint256) {
+        return epochPoints[currentEpoch].minDonations;
+    }
+
+    /// @dev Gets blocks remaining in the current epoch.
+    function getBlocksRemaining() external view returns (uint256) {
+        uint256 curEpoch = currentEpoch;
+        uint256 secondsSinceEpochEnd = block.timestamp - epochPoints[curEpoch - 1].endTime;
+        uint256 curEpochLength = epochPoints[curEpoch].length;
+        if (secondsSinceEpochEnd > curEpochLength) {
+            return 0;
+        } else {
+            return curEpochLength - secondsSinceEpochEnd;
+        }
+    }
 }
