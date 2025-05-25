@@ -156,6 +156,12 @@ contract DerolasStaking {
     // Mapping of epoch => epoch points
     mapping(uint256 => EpochPoint) public epochPoints;
 
+    event DonationReceived(address indexed donatorAddress, uint256 indexed amount);
+    event AuctionEnded(uint256 indexed epochRewards);
+    event UnclaimedRewardsDonated(uint256 indexed amount);
+    event RewardsClaimed(address indexed donatorAddress, uint256 indexed amount);
+    event DerolasBought(uint256 indexed amount);
+
     /// @dev DerolasStaking constructor.
     /// @param _minDonation Minimum epoch donation.
     /// @param _balancerRouter Balancer router address.
@@ -213,6 +219,8 @@ contract DerolasStaking {
 
 
 
+
+
         uint256[] memory amountsIn = new uint256[](assetsInPool);
         amountsIn[incentiveTokenIndex] = unclaimedAmount;
 
@@ -237,7 +245,11 @@ contract DerolasStaking {
         uint256 lastStakingCheckpointDelay = block.timestamp - IStaking(stakingInstance).tsCheckpoint();
         require(lastStakingCheckpointDelay <= epochPoints[curEpoch].maxCheckpointDelay, "Staking epoch end time difference overflow");
 
-        _donateUnclaimedRewards(claimEpoch);
+
+
+    function endEpoch() external onlyOncePerEpoch nonReentrant {
+   
+
 
         uint256 nextEpoch = curEpoch + 1;
 
@@ -252,11 +264,58 @@ contract DerolasStaking {
 
         IStaking(stakingInstance).checkpoint();
 
+
         emit AuctionEnded(curEpoch, epochPoints[curEpoch].totalDonated, epochPoints[claimEpoch].totalClaimed,
             epochPoints[curEpoch].availableRewards);
-
+        _donateUnclaimedRewards(claimEpoch);
         _locked = 1;
     }
+    
+    function advanceEpoch() internal {
+        currentEpoch += 1;
+        totalDonated = 0;
+        totalClaimed = 0;
+        epochToEndBlock[currentEpoch] = block.number + epochLength;
+    }
+
+    function donateUnclaimedRewards(uint8 epoch) internal {
+        uint256 totalEpochDonations = epochToTotalDonated[epoch];
+        if (totalEpochDonations == 0) {
+            epochDonated[epoch] = true;
+            return;
+        }
+
+        uint256 unclaimedAmount = epochRewards - totalClaimed;
+        if (unclaimedAmount == 0) {
+            epochDonated[epoch] = true;
+            return;
+        }
+        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmount, "Not enough incentive balance to donate");
+
+        uint256[] memory amountsIn = new uint256[](assetsInPool);
+        amountsIn[olasIndex] = unclaimedAmount;
+
+        IERC20 token = IERC20(incentiveTokenAddress);
+        token.approve(address(permit2), 0);
+        token.approve(address(permit2), unclaimedAmount);
+        permit2.approve(incentiveTokenAddress, balancerRouter, uint160(unclaimedAmount), uint48(block.timestamp + 1 days));
+        IBalancerRouter(balancerRouter).donate(poolId, amountsIn, true, "");
+        epochDonated[epoch] = true;
+        emit UnclaimedRewardsDonated(unclaimedAmount);
+    }
+    function donateEthContribution() internal {
+        // require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmount, "Not enough incentive balance to donate");
+        // we instead check the whole balance of the contract
+        uint256 contributionAmount = address(this).balance;
+        if (contributionAmount == 0) {
+            return;
+        }
+        uint256[] memory amountsIn = new uint256[](assetsInPool);
+        amountsIn[wethIndex] = contributionAmount;
+        IBalancerRouter(balancerRouter).donate{value: contributionAmount}(poolId, amountsIn, true, "");
+        emit DerolasBought(contributionAmount);
+    }
+
 
     /// @dev Claims donation based rewards for the previous epoch
     function claim() external {
@@ -428,6 +487,17 @@ contract DerolasStaking {
         } else {
             return (curEpochLength - secondsSinceEpochEnd, 0);
         }
+
+        if (block.number >= epochToEndBlock[currentEpoch]) {
+            return 0;
+        }
+        uint256 blocksRemaining = epochToEndBlock[currentEpoch] - block.number;
+        return blocksRemaining;
+    }
+
+
+    function getTotalDonated() public view returns (uint256) {
+        return totalDonated;
     }
 
     /// @dev Gets epoch progress.
