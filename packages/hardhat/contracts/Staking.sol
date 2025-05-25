@@ -122,7 +122,7 @@ contract DerolasStaking {
     event StakingInstanceUpdated(address indexed stakingInstance);
     event ParamsUpdated(uint256 indexed nextEpoch, uint256 availableRewards, uint256 epochLength,
         uint256 maxCheckpointDelay, uint256 minDonation);
-    event DonationAdjusted(uint256 indexed insufficientBalance, uint256 indexed expected);
+    event UnclaimedRewardsAdjusted(uint256 indexed insufficientBalance, uint256 indexed expected);
 
     // Assets in pool
     uint256 public immutable assetsInPool;
@@ -201,23 +201,25 @@ contract DerolasStaking {
     /// @dev Donates unclaimed rewards.
     /// @param claimEpoch Claim epoch.
     function _donateUnclaimedRewards(uint256 claimEpoch) internal {
+        // Calculate unclaimed amount and check for zero value
         uint256 unclaimedAmount = epochPoints[claimEpoch].availableRewards - epochPoints[claimEpoch].totalClaimed;
         if (unclaimedAmount == 0) {
             return;
         }
 
-
+        // Check contract balance
         uint256 balance = IERC20(incentiveTokenAddress).balanceOf(address(this));
         if (balance < unclaimedAmount) {
-           emit DonationAdjusted(balance, unclaimedAmount);
-           unclaimedAmount = balance;
+            emit UnclaimedRewardsAdjusted(balance, unclaimedAmount);
+
+            // Check for zero balance
+            if (balance == 0) {
+                return;
+            }
+
+            // Adjust unclaimed amount
+            unclaimedAmount = balance;
         }
-
-        if (balance == 0) {
-           return;
-        }
-
-
 
 
 
