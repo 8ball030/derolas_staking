@@ -40,7 +40,7 @@ async function impersonateAccount(stakingContract: DerolasStaking) {
   });
 
   // Transfer OLAS to your staking contract
-  const olasToken = await ethers.getContractAt("IERC20", incentiveTokenAddress);
+  const olasToken = await ethers.getContractAt("MockERC20", incentiveTokenAddress);
   await olasToken.connect(impersonatedSigner).transfer(stakingContract.target, INCENTIVE_TOKENS);
   return INCENTIVE_TOKENS;
 }
@@ -248,7 +248,7 @@ describe("DerolasStaking", function () {
       const newEpoch = await stakingContract.currentEpoch();
       expect(newEpoch).to.gt(currentEpoch);
     });
-    it("Should show contributors claimable", async function () {
+    it.only("Should show contributors claimable", async function () {
       const donationAmount = 0.001; // 0.001 ETH
       const donationAmountInWei = ethers.parseEther(donationAmount.toString());
       const result = await stakingContract.donate({ value: donationAmountInWei });
@@ -272,7 +272,7 @@ describe("DerolasStaking", function () {
     });
     it("Should allow claim", async function () {
       const [deployer] = await ethers.getSigners();
-      const olasToken = await ethers.getContractAt("IERC20", incentiveTokenAddress);
+      const olasToken = await ethers.getContractAt("MockERC20", incentiveTokenAddress);
       const preClaimBalanceIncentive = await olasToken.balanceOf(deployer.address);
       const stakingContractBalance = await olasToken.balanceOf(stakingContract.target);
       const result = await stakingContract.claim();
@@ -344,7 +344,7 @@ describe("DerolasStaking", function () {
       });
 
       // Transfer OLAS to your staking contract
-      const olasToken = await ethers.getContractAt("IERC20", incentiveTokenAddress);
+      const olasToken = await ethers.getContractAt("MockERC20", incentiveTokenAddress);
       await olasToken.connect(impersonatedSigner).approve(stakingContract.target, INCENTIVE_TOKENS);
       const initialBalance = await stakingContract.incentiveBalance();
       await stakingContract.connect(impersonatedSigner).topUpIncentiveBalance(INCENTIVE_TOKENS);

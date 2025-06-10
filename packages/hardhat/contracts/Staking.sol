@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
-
+import "hardhat/console.sol";
 import {SafeTransferLib} from "./libraries/SafeTransferLib.sol";
 
 /// @title Balancer Router Interface
@@ -25,7 +25,7 @@ interface IBalancerRouter {
 
 /// @title ERC20 Interface
 /// @notice Interface for interacting with ERC20 tokens
-interface ILocalERC20 {
+interface IERC20 {
     /// @dev Gets the amount of tokens owned by a specified account.
     /// @param account Account address.
     /// @return Amount of tokens owned.
@@ -198,7 +198,8 @@ contract DerolasStaking {
         epochPoints[1].maxCheckpointDelay = _maxCheckpointDelay;
         epochPoints[1].minDonations = _minDonation;
 
-        epochPoints[0].endTime = block.number + _epochLength; // Set end time for epoch 0 to current block number + epoch length
+        // Set end time for epoch 0 to current block timestamp
+        epochPoints[0].endTime = block.timestamp;
         owner = msg.sender;
     }
 
@@ -212,7 +213,7 @@ contract DerolasStaking {
         }
 
         // Check contract balance
-        uint256 balance = ILocalERC20(incentiveTokenAddress).balanceOf(address(this));
+        uint256 balance = IERC20(incentiveTokenAddress).balanceOf(address(this));
         if (balance < unclaimedAmount) {
             emit UnclaimedRewardsAdjusted(balance, unclaimedAmount);
 
@@ -224,15 +225,14 @@ contract DerolasStaking {
             // Adjust unclaimed amount
             unclaimedAmount = balance;
         }
-
-
-
+        
+        // Donate into the pool
         uint256[] memory amountsIn = new uint256[](assetsInPool);
         amountsIn[incentiveTokenIndex] = unclaimedAmount;
 
 
-        ILocalERC20(incentiveTokenAddress).approve(permit2, 0);
-        ILocalERC20(incentiveTokenAddress).approve(permit2, unclaimedAmount);
+        IERC20(incentiveTokenAddress).approve(permit2, 0);
+        IERC20(incentiveTokenAddress).approve(permit2, unclaimedAmount);
         IPermit2(permit2).approve(incentiveTokenAddress, balancerRouter, uint160(unclaimedAmount), uint48(block.timestamp + 1 days));
         IBalancerRouter(balancerRouter).donate(poolId, amountsIn, true, "");
         emit UnclaimedRewardsDonated(unclaimedAmount);
@@ -248,7 +248,8 @@ contract DerolasStaking {
         uint256 curEpoch = currentEpoch;
         uint256 claimEpoch = curEpoch - 1;
         // require(epochPoints[claimEpoch].endTime < block.number, "Epoch not over");
-        require(epochPoints[claimEpoch].endTime > 0, "Epoch not over");
+        //require(epochPoints[claimEpoch].endTime > 0, "Epoch not over");
+        require(block.timestamp >= epochPoints[claimEpoch].endTime + epochPoints[curEpoch].length, "Epoch not over");
 
         // uint256 lastStakingCheckpointDelay = block.timestamp - IStaking(stakingInstance).tsCheckpoint();
         // require(lastStakingCheckpointDelay <= epochPoints[curEpoch].maxCheckpointDelay, "Staking epoch end time difference overflow");
@@ -331,7 +332,7 @@ contract DerolasStaking {
 
         uint256 amount = (donation * epochPoints[claimEpoch].availableRewards) / totalEpochDonations;
         require(amount > 0, "Nothing to claim");
-        require(ILocalERC20(incentiveTokenAddress).balanceOf(address(this)) >= amount, "Not enough rewards");
+        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= amount, "Not enough rewards");
 
         epochToClaimed[claimEpoch][msg.sender] = amount;
         epochPoints[claimEpoch].totalClaimed += amount;
@@ -405,7 +406,7 @@ contract DerolasStaking {
 
         // Calculate rewards
         uint256 amount = (donation * epochPoints[claimEpoch].availableRewards) / totalEpochDonations;
-        require(ILocalERC20(incentiveTokenAddress).balanceOf(address(this)) >= amount, "Not enough rewards");
+        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= amount, "Not enough rewards");
         return amount - epochToClaimed[claimEpoch][account];
     }
 
@@ -415,7 +416,7 @@ contract DerolasStaking {
     function estimateTicketPercentage(uint256 donation) external view returns (uint256) {
         uint256 curEpoch = currentEpoch;
         require(donation >= epochPoints[curEpoch].minDonations, "Minimum donation not met");
-        require(ILocalERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochPoints[curEpoch].availableRewards,
+        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochPoints[curEpoch].availableRewards,
             "Not enough rewards to play the game");
 
         uint256 totalEpochDonations = epochPoints[curEpoch].totalDonated;
@@ -434,7 +435,7 @@ contract DerolasStaking {
 
         uint256 curEpoch = currentEpoch;
         require(msg.value >= epochPoints[curEpoch].minDonations, "Donation amount is less than the minimum donation");
-        require(ILocalERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochPoints[curEpoch].availableRewards,
+        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= epochPoints[curEpoch].availableRewards,
             "Not enough rewards to play the game");
 
         require(epochToDonations[curEpoch][msg.sender] == 0, "Already donated this epoch");
@@ -562,7 +563,7 @@ contract DerolasStaking {
             state.secondsRemaining = state.epochEndTime - block.timestamp;
         }
     
-        state.incentiveBalance = ILocalERC20(incentiveTokenAddress).balanceOf(address(this));
+        state.incentiveBalance = IERC20(incentiveTokenAddress).balanceOf(address(this));
         state.userCurrentDonation = epochToDonations[curEpoch][user];
     
         if (state.totalDonated > 0 && state.userCurrentDonation > 0) {
@@ -591,7 +592,7 @@ contract DerolasStaking {
     // Functions for testing purposes
     /// @dev Gets incentiveBalance.
     function incentiveBalance() external view returns (uint256) {
-        return ILocalERC20(incentiveTokenAddress).balanceOf(address(this));
+        return IERC20(incentiveTokenAddress).balanceOf(address(this));
     }
 
     /// @dev Gets current min donation.
