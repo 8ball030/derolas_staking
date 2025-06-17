@@ -30,26 +30,26 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
 
     address public immutable balancerRouter;
     address public immutable poolId;
-    uint8 public immutable assetsInPool;
-    uint8 public immutable wethIndex;
-    uint8 public immutable olasIndex;
+    uint256 public immutable assetsInPool;
+    uint256 public immutable wethIndex;
+    uint256 public immutable olasIndex;
     address public immutable incentiveTokenAddress;
 
     uint256 public immutable minimumDonation;
-    uint256 public immutable epochRewards = 8e17; // 1 OLAS
+    uint256 public immutable epochRewards = 1e18; // 1 OLAS
     uint256 public immutable epochLength = 90;
 
     uint256 public totalDonated;
     uint256 public totalClaimed;
-    uint8 public currentEpoch = 0;
+    uint256 public currentEpoch = 0;
 
-    uint8 public constant maxDonatorsPerEpoch = 8;
+    uint256 public constant maxDonatorsPerEpoch = 88;
 
-    mapping(uint8 => mapping(address => uint256)) public epochToDonations;
-    mapping(uint8 => mapping(address => uint256)) public epochToClaimed;
-    mapping(uint8 => uint256) public epochToTotalDonated;
-    mapping(uint8 => uint256) public epochToEndBlock;
-    mapping(uint8 => bool) public epochDonated;
+    mapping(uint256 => mapping(address => uint256)) public epochToDonations;
+    mapping(uint256 => mapping(address => uint256)) public epochToClaimed;
+    mapping(uint256 => uint256) public epochToTotalDonated;
+    mapping(uint256 => uint256) public epochToEndBlock;
+    mapping(uint256 => bool) public epochDonated;
 
     event DonationReceived(address indexed donatorAddress, uint256 indexed amount);
     event AuctionEnded(uint256 indexed epochRewards);
@@ -109,7 +109,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         if (currentEpoch == 0) {
             return;
         }
-        uint8 epoch = currentEpoch - 1;
+        uint256 epoch = currentEpoch - 1;
         uint256 totalEpochDonations = epochToTotalDonated[epoch];
         if (totalEpochDonations == 0) {
             epochDonated[epoch] = true;
@@ -151,7 +151,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     function claim() external nonReentrant {
         require(currentEpoch > 0, "No epoch to claim from");
 
-        uint8 claimEpoch = currentEpoch - 1;
+        uint256 claimEpoch = currentEpoch - 1;
         require(epochToEndBlock[claimEpoch] > 0, "Epoch not ended yet");
         require(block.number <= epochToEndBlock[claimEpoch] + (2 * epochLength), "Claim window closed");
         require(epochToClaimed[claimEpoch][msg.sender] == 0, "Already claimed");
@@ -178,7 +178,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         if (currentEpoch == 0) {
             return 0;
         }
-        uint8 claimEpoch = currentEpoch - 1;
+        uint256 claimEpoch = currentEpoch - 1;
         if (epochToClaimed[claimEpoch][_address] > 0) {
             return 0;
         }
@@ -252,7 +252,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         return epochRewards;
     }
 
-    function getCurrentEpoch() public view returns (uint8) {
+    function getCurrentEpoch() public view returns (uint256) {
         return currentEpoch;
     }
 
@@ -267,7 +267,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         if (currentEpoch == 0) {
             return 0;
         }
-        uint8 claimEpoch = currentEpoch - 1;
+        uint256 claimEpoch = currentEpoch - 1;
         if (epochDonated[claimEpoch]) {
             return 0;
         }
@@ -285,7 +285,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     }
 
     function getGameState(address user) external view returns (
-        uint8 _currentEpoch,
+        uint256 _currentEpoch,
         uint256 _epochLength,
         uint256 _epochEndBlock,
         uint256 _minimumDonation,
@@ -316,7 +316,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
             _userClaimable = 0;
             _hasClaimed = false;
         } else {
-            uint8 claimEpoch = currentEpoch - 1;
+            uint256 claimEpoch = currentEpoch - 1;
             _hasClaimed = epochToClaimed[claimEpoch][user] > 0;
             uint256 donation = epochToDonations[claimEpoch][user];
             uint256 totalEpochDonations = epochToTotalDonated[claimEpoch];
@@ -335,9 +335,9 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         uint256 _minimumDonation,
         address _balancerRouter,
         address _poolId,
-        uint8 _assetsInPool,
-        uint8 _wethIndex,
-        uint8 _olasIndex,
+        uint256 _assetsInPool,
+        uint256 _wethIndex,
+        uint256 _olasIndex,
         address _incentiveTokenAddress
     ) Ownable(_owner) {
         minimumDonation = _minimumDonation;
