@@ -248,7 +248,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         return totalDonated;
     }
 
-    function getEpochRewards() public view returns (uint256) {
+    function getEpochRewards() public pure returns (uint256) {
         return epochRewards;
     }
 
@@ -260,7 +260,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         return totalClaimed;
     }
 
-    function getEpochLength() public view returns (uint256) {
+    function getEpochLength() public pure returns (uint256) {
         return epochLength;
     }
     function getTotalUnclaimed() public view returns (uint256) {
@@ -282,6 +282,12 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         storeGame();
         advanceEpoch();
         emit AuctionEnded(0);
+    }
+
+    function drainIncentiveBalance() external onlyOwner {
+        uint256 balance = IERC20(incentiveTokenAddress).balanceOf(address(this));
+        require(balance > 0, "No incentive balance to drain");
+        IERC20(incentiveTokenAddress).safeTransfer(msg.sender, balance);
     }
 
     function getGameState(address user) external view returns (

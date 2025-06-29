@@ -332,5 +332,20 @@ describe("DerolasStaking", function () {
       const newBalance = await stakingContract.incentiveBalance();
       expect(newBalance).to.greaterThan(initialBalance);
     });
+    it("Should allow only the owner to drain the incentive balance", async function () {
+      const [deployer, user] = await ethers.getSigners();
+      const olasToken = await ethers.getContractAt("IERC20", incentiveTokenAddress);
+      const initialBalance = await olasToken.balanceOf(deployer.address);
+      // try to drain the balance as a user
+      await expect(stakingContract.connect(user).drainIncentiveBalance()).to.be.revertedWithCustomError(
+        stakingContract,
+        "OwnableUnauthorizedAccount",
+      );
+      // drain the balance as the owner
+      await stakingContract.connect(deployer).drainIncentiveBalance();
+      const newBalance = await olasToken.balanceOf(deployer.address);
+      expect(newBalance).to.be.gt(initialBalance);
+      expect(await stakingContract.incentiveBalance()).to.equal(0);
+    });
   });
 });
