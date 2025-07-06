@@ -309,8 +309,74 @@ describe("DerolasStaking", function () {
       const totalUnclaimed2 = await stakingContract.getTotalUnclaimed();
       expect(totalUnclaimed2).to.be.eq(0);
     });
+    it("Should donate only one donars unclaimed", async function () {
+      const [deployer] = await ethers.getSigners();
+      const donationAmount = 0.001; // 0.001 ETH
+      const donationAmountInWei = ethers.parseEther(donationAmount.toString());
 
-    // confirm we can call the topUp function
+      // user donates
+      const userWallet1 = ethers.Wallet.createRandom().connect(ethers.provider);
+      const userWallet2 = ethers.Wallet.createRandom().connect(ethers.provider);
+      await deployer.sendTransaction({
+        to: userWallet1.address,
+        value: ethers.parseEther("1.0"), // fund the wallet
+      });
+      await deployer.sendTransaction({
+        to: userWallet2.address,
+        value: ethers.parseEther("1.0"), // fund the wallet
+      });
+      await stakingContract.connect(userWallet1).donate({ value: donationAmountInWei });
+      await stakingContract.connect(userWallet2).donate({ value: donationAmountInWei });
+      // check the users have shares.
+      const shares1 = await stakingContract.getCurrentShare(userWallet1.address);
+      const shares2 = await stakingContract.getCurrentShare(userWallet2.address);
+      expect(shares1).to.be.eq(shares2);
+
+      // // we now have a donation, we can end the epoch
+      const currentEpoch = await stakingContract.currentEpoch();
+
+      let blockRemaining = await stakingContract.getBlocksRemaining();
+      // // we need to wait for the block remaining to be 0
+      for (let i = 0; i < Number(blockRemaining); i++) {
+        await network.provider.send("evm_mine");
+      }
+      // // mine the block
+      await stakingContract.endEpoch();
+      const newEpoch = await stakingContract.currentEpoch();
+      expect(newEpoch).to.be.eq(currentEpoch + BigInt(1));
+      // check incentive balance for the 1st user.
+      const olasToken = await ethers.getContractAt("IERC20", incentiveTokenAddress);
+      const incentiveBalance1 = await olasToken.balanceOf(userWallet1.address);
+
+      // we claim
+      const claimable1 = await stakingContract.claimable(userWallet1.address);
+      expect(claimable1).to.be.gt(0);
+      await stakingContract.connect(userWallet1).claim();
+
+      const postIncentiveBalance1 = await olasToken.balanceOf(userWallet1.address);
+
+      expect(postIncentiveBalance1).to.be.gt(incentiveBalance1);
+      // // end another epoch
+      blockRemaining = await stakingContract.getBlocksRemaining();
+      // // we need to wait for the block remaining to be 0
+      // // verify 2 epochs have passed
+      const newEpoch2 = await stakingContract.currentEpoch();
+      expect(newEpoch2).to.be.eq(currentEpoch + BigInt(1));
+
+      for (let i = 0; i < Number(blockRemaining); i++) {
+        await network.provider.send("evm_mine");
+      }
+      // mine the block
+      const totalUnclaimed2 = await stakingContract.getTotalUnclaimed();
+      expect(totalUnclaimed2).to.be.gt(0);
+      await stakingContract.endEpoch();
+      // // check total unclaimed which should be now be nothing as all unclaimed should be donated
+      const totalUnclaimed3 = await stakingContract.getTotalUnclaimed();
+      expect(totalUnclaimed3).to.be.eq(0);
+
+      // // check total unclaimed which should be now be nothing as all unclaimed should be donated
+      // confirm we can call the topUp function
+    });
     it("Should top up OLAS rewards via function", async function () {
       await network.provider.request({
         method: "hardhat_impersonateAccount",
