@@ -27,7 +27,7 @@ async function main() {
   const signer = wallet.connect(provider);
 
   // Load deployment
-  const stakingDeployment = await deployments.get("DerolasStaking"); // must match name in deploy script
+  const stakingDeployment = await deployments.get("DerolasAuction"); // must match name in deploy script
   const staking = new ethers.Contract(stakingDeployment.address, stakingDeployment.abi, signer);
 
   console.log(`Calling forceAdvanceEpoch on ${stakingDeployment.address}`);

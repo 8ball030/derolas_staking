@@ -31,9 +31,9 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
   const olasIndex: number = 3;
   const incentiveTokenAddress: string = "0x54330d28ca3357f294334bdc454a032e7f353416";
 
-  console.log("👋 Deploying DerolasStaking contract...");
+  console.log("👋 Deploying DerolasAuction contract...");
   console.log("Deployer address:", deployer);
-  await deploy("DerolasStaking", {
+  await deploy("DerolasAuction", {
     from: deployer,
     // Contract constructor arguments
     args: [
@@ -54,7 +54,7 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
   });
 
   // Get the deployed contract to interact with it after deploying.
-  const staking = await hre.ethers.getContract<Contract>("DerolasStaking", deployer);
+  const staking = await hre.ethers.getContract<Contract>("DerolasAuction", deployer);
   console.log("👋 Epoch is to begin...");
   console.log("Staking contract deployed to:", staking.address);
   console.log("Staking contract deployed by:", deployer);
@@ -89,4 +89,4 @@ export default deployYourContract;
 
 // Tags are useful if you have multiple deploy files and only want to run one of them.
 // e.g. yarn deploy --tags YourContract
-deployYourContract.tags = ["DerolasStaking"];
+deployYourContract.tags = ["DerolasAuction"];

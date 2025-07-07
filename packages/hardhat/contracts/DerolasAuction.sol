@@ -19,7 +19,7 @@ interface IBalancerVaultAdmin {
     function getMinimumTradeAmount() external view returns (uint256);
 }
 
-contract DerolasStaking is ReentrancyGuard, Ownable {
+contract DerolasAuction is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     IPermit2 public immutable permit2;

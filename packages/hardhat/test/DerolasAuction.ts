@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { ethers, network } from "hardhat";
-import { DerolasStaking } from "../typechain-types";
+import { DerolasAuction } from "../typechain-types";
 
 const minimumDonation: number = 1000000000000000; // 0.001 ETH
 const balancerRouter: string = "0x3f170631ed9821Ca51A59D996aB095162438DC10";
@@ -16,7 +16,7 @@ const incentiveTokenAddress: string = "0x54330d28ca3357f294334bdc454a032e7f35341
 const INCENTIVE_TOKENS = ethers.parseEther("1000");
 const OLAS_HOLDER = "0x7Da5c3878497bA7dC9E3F3fd6735e3F26A110b2a"; // Replace with the actual OLAS holder address
 
-async function impersonateAccount(stakingContract: DerolasStaking) {
+async function impersonateAccount(stakingContract: DerolasAuction) {
   // Impersonate OLAS holder
   await network.provider.request({
     method: "hardhat_impersonateAccount",
@@ -36,13 +36,13 @@ async function impersonateAccount(stakingContract: DerolasStaking) {
   return INCENTIVE_TOKENS;
 }
 
-describe("DerolasStaking", function () {
+describe("DerolasAuction", function () {
   // We define a fixture to reuse the same setup in every test.
 
-  let stakingContract: DerolasStaking;
+  let stakingContract: DerolasAuction;
   before(async () => {
     const [owner] = await ethers.getSigners();
-    const yourContractFactory = await ethers.getContractFactory("DerolasStaking");
+    const yourContractFactory = await ethers.getContractFactory("DerolasAuction");
     stakingContract = (await yourContractFactory.deploy(
       owner.address,
       minimumDonation,
@@ -53,7 +53,7 @@ describe("DerolasStaking", function () {
       wethIndex,
       olasIndex,
       incentiveTokenAddress,
-    )) as DerolasStaking;
+    )) as DerolasAuction;
     await stakingContract.waitForDeployment();
   });
 
