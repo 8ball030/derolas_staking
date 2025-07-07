@@ -4,6 +4,9 @@ import { DerolasStaking } from "../typechain-types";
 
 const minimumDonation: number = 1000000000000000; // 0.001 ETH
 const balancerRouter: string = "0x3f170631ed9821Ca51A59D996aB095162438DC10";
+
+const balancerVaultAdmin: string = "0x35fFB749B273bEb20F40f35EdeB805012C539864";
+
 const poolId: string = "0xaf5b7999f491c42c05b5a2ca80f1d200d617cc8c";
 const assetsInPool: number = 8;
 const wethIndex: number = 1;
@@ -44,6 +47,7 @@ describe("DerolasStaking", function () {
       owner.address,
       minimumDonation,
       balancerRouter,
+      balancerVaultAdmin,
       poolId,
       assetsInPool,
       wethIndex,
@@ -131,9 +135,6 @@ describe("DerolasStaking", function () {
       expect(await stakingContract.incentiveBalance()).to.equal(INCENTIVE_TOKENS);
     });
     it("Should let give all shares to single donator", async function () {
-      // const transferAmount = await impersonateAccount(stakingContract);
-      // expect(await stakingContract.incentiveBalance()).to.equal(transferAmount);
-
       const [deployer] = await ethers.getSigners();
 
       // create and fund a new wallet
@@ -157,9 +158,6 @@ describe("DerolasStaking", function () {
     });
 
     it("Should let give shares to multiple donators", async function () {
-      // const transferAmount = await impersonateAccount(stakingContract);
-      // expect(await stakingContract.incentiveBalance()).to.equal(transferAmount);
-
       const [deployer] = await ethers.getSigners();
 
       // create and fund a new wallet
@@ -185,8 +183,6 @@ describe("DerolasStaking", function () {
 
   describe("GameFlow", function () {
     it("Contract starts at 1 epoch.", async function () {
-      // const transferAmount = await impersonateAccount(stakingContract);
-      // expect(await stakingContract.incentiveBalance()).to.equal(transferAmount);
       const currentEpoch = await stakingContract.currentEpoch();
       expect(currentEpoch).to.equal(1);
     });
@@ -309,8 +305,130 @@ describe("DerolasStaking", function () {
       const totalUnclaimed2 = await stakingContract.getTotalUnclaimed();
       expect(totalUnclaimed2).to.be.eq(0);
     });
+    it("Should donate only one donars unclaimed from 2 donors", async function () {
+      const [deployer] = await ethers.getSigners();
+      const donationAmountInWei = ethers.parseEther("0.001");
+      const olasToken = await ethers.getContractAt("IERC20", incentiveTokenAddress);
 
-    // confirm we can call the topUp function
+      // Create two funded wallets
+      const wallets = await Promise.all(
+        Array.from({ length: 2 }, async () => {
+          const w = ethers.Wallet.createRandom().connect(ethers.provider);
+          await deployer.sendTransaction({
+            to: w.address,
+            value: ethers.parseEther("1"),
+          });
+          return w;
+        }),
+      );
+
+      // Both wallets donate
+      for (const w of wallets) {
+        await stakingContract.connect(w).donate({ value: donationAmountInWei });
+      }
+
+      // Both should have equal shares
+      const shares = await Promise.all(wallets.map(w => stakingContract.getCurrentShare(w.address)));
+      expect(shares[0]).to.equal(shares[1]);
+
+      // Advance to end of epoch
+      const currentEpoch = await stakingContract.currentEpoch();
+      let blocks = await stakingContract.getBlocksRemaining();
+      for (let i = 0; i < Number(blocks); i++) {
+        await network.provider.send("evm_mine");
+      }
+      await stakingContract.endEpoch();
+      expect(await stakingContract.currentEpoch()).to.equal(currentEpoch + 1n);
+
+      // Wallet 0 claims
+      const preClaimBalance = await olasToken.balanceOf(wallets[0].address);
+      const claimable0 = await stakingContract.claimable(wallets[0].address);
+      expect(claimable0).to.be.gt(0);
+      await stakingContract.connect(wallets[0]).claim();
+      const postClaimBalance = await olasToken.balanceOf(wallets[0].address);
+      expect(postClaimBalance).to.be.gt(preClaimBalance);
+
+      // Advance and end second epoch
+      blocks = await stakingContract.getBlocksRemaining();
+      for (let i = 0; i < Number(blocks); i++) {
+        await network.provider.send("evm_mine");
+      }
+
+      const totalUnclaimedBefore = await stakingContract.getTotalUnclaimed();
+      expect(totalUnclaimedBefore).to.be.gt(0);
+      await stakingContract.endEpoch();
+
+      const totalUnclaimedAfter = await stakingContract.getTotalUnclaimed();
+      expect(totalUnclaimedAfter).to.equal(0);
+      // // check total unclaimed which should be now be nothing as all unclaimed should be donated
+      // confirm we can call the topUp function
+    });
+    it("Should allow ending epoch with 3 donors", async function () {
+      const [deployer] = await ethers.getSigners();
+      const donationAmountInWei = ethers.parseEther("0.001");
+      const olasToken = await ethers.getContractAt("IERC20", incentiveTokenAddress);
+
+      // Create two funded wallets
+      const wallets = await Promise.all(
+        Array.from({ length: 3 }, async () => {
+          const w = ethers.Wallet.createRandom().connect(ethers.provider);
+          await deployer.sendTransaction({
+            to: w.address,
+            value: ethers.parseEther("1"),
+          });
+          return w;
+        }),
+      );
+
+      // Both wallets donate
+      for (const w of wallets) {
+        await stakingContract.connect(w).donate({ value: donationAmountInWei });
+      }
+
+      // Both should have equal shares
+      const shares = await Promise.all(wallets.map(w => stakingContract.getCurrentShare(w.address)));
+      expect(shares[0]).to.equal(shares[1]);
+
+      // Advance to end of epoch
+      const currentEpoch = await stakingContract.currentEpoch();
+      let blocks = await stakingContract.getBlocksRemaining();
+      for (let i = 0; i < Number(blocks); i++) {
+        await network.provider.send("evm_mine");
+      }
+      await stakingContract.endEpoch();
+      expect(await stakingContract.currentEpoch()).to.equal(currentEpoch + 1n);
+
+      // Wallets claim
+      // const preClaimBalance = await olasToken.balanceOf(wallets[0].address);
+      // const claimable0 = await stakingContract.claimable(wallets[0].address);
+      // expect(claimable0).to.be.gt(0);
+      // await stakingContract.connect(wallets[0]).claim();
+      // const postClaimBalance = await olasToken.balanceOf(wallets[0].address);
+      // expect(postClaimBalance).to.be.gt(preClaimBalance);
+      for (const w of wallets) {
+        const preClaimBalance = await olasToken.balanceOf(w.address);
+        const claimable = await stakingContract.claimable(w.address);
+        expect(claimable).to.be.gt(0);
+        await stakingContract.connect(w).claim();
+        const postClaimBalance = await olasToken.balanceOf(w.address);
+        expect(postClaimBalance).to.be.gt(preClaimBalance);
+      }
+
+      // Advance and end second epoch
+      blocks = await stakingContract.getBlocksRemaining();
+      for (let i = 0; i < Number(blocks); i++) {
+        await network.provider.send("evm_mine");
+      }
+
+      const totalUnclaimedBefore = await stakingContract.getTotalUnclaimed();
+      expect(totalUnclaimedBefore).to.be.gt(0);
+      await stakingContract.endEpoch();
+
+      const totalUnclaimedAfter = await stakingContract.getTotalUnclaimed();
+      expect(totalUnclaimedAfter).to.equal(0);
+      // // check total unclaimed which should be now be nothing as all unclaimed should be donated
+      // confirm we can call the topUp function
+    });
     it("Should top up OLAS rewards via function", async function () {
       await network.provider.request({
         method: "hardhat_impersonateAccount",
@@ -331,6 +449,21 @@ describe("DerolasStaking", function () {
       await stakingContract.connect(impersonatedSigner).topUpIncentiveBalance(INCENTIVE_TOKENS);
       const newBalance = await stakingContract.incentiveBalance();
       expect(newBalance).to.greaterThan(initialBalance);
+    });
+    it("Should allow only the owner to drain the incentive balance", async function () {
+      const [deployer, user] = await ethers.getSigners();
+      const olasToken = await ethers.getContractAt("IERC20", incentiveTokenAddress);
+      const initialBalance = await olasToken.balanceOf(deployer.address);
+      // try to drain the balance as a user
+      await expect(stakingContract.connect(user).drainIncentiveBalance()).to.be.revertedWithCustomError(
+        stakingContract,
+        "OwnableUnauthorizedAccount",
+      );
+      // drain the balance as the owner
+      await stakingContract.connect(deployer).drainIncentiveBalance();
+      const newBalance = await olasToken.balanceOf(deployer.address);
+      expect(newBalance).to.be.gt(initialBalance);
+      expect(await stakingContract.incentiveBalance()).to.equal(0);
     });
   });
 });

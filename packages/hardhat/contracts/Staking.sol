@@ -7,12 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface IBalancerRouter {
-    function donate(
-        address pool,
-        uint256[] memory amountsIn,
-        bool wethIsEth,
-        bytes memory userData
-    ) external payable;
+    function donate(address pool, uint256[] memory amountsIn, bool wethIsEth, bytes memory userData) external payable;
     // get permit2
     function getPermit2() external view returns (address);
 }
@@ -20,19 +15,24 @@ interface IBalancerRouter {
 interface IPermit2 {
     function approve(address token, address spender, uint160 amount, uint48 expiration) external;
 }
-
+interface IBalancerVaultAdmin {
+    function getMinimumTradeAmount() external view returns (uint256);
+}
 
 contract DerolasStaking is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
-
     IPermit2 public immutable permit2;
 
     address public immutable balancerRouter;
+    address public immutable balancerVaultAdmin;
     address public immutable poolId;
+
     uint256 public immutable assetsInPool;
     uint256 public immutable wethIndex;
     uint256 public immutable olasIndex;
+    uint256 public immutable minimumBalancerDonationAmount;
+
     address public immutable incentiveTokenAddress;
 
     uint256 public immutable minimumDonation;
@@ -52,11 +52,10 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     mapping(uint256 => bool) public epochDonated;
 
     event DonationReceived(address indexed donatorAddress, uint256 indexed amount);
-    event AuctionEnded(uint256 indexed epochRewards);
+    event AuctionEnded(uint256 indexed epochRewards, uint256 indexed totalDonated);
     event UnclaimedRewardsDonated(uint256 indexed amount);
-    event RewardsClaimed(address indexed donatorAddress, uint256 indexed amount);
+    event RewardsClaimed(address indexed donatorAddress, uint256 indexed rewardsAmount, uint256 indexed donationAmount);
     event EthDonatedToBalancer(uint256 indexed amount);
-
 
     receive() external payable {}
 
@@ -82,7 +81,6 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         _;
     }
 
-
     function endEpoch() external onlyOncePerEpoch nonReentrant {
         require(currentEpoch > 0, "No epoch to end");
         require(block.number > epochToEndBlock[currentEpoch], "Epoch not over");
@@ -90,9 +88,8 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         donateEthContribution();
         storeGame();
         advanceEpoch();
-        emit AuctionEnded(epochRewards);
+        emit AuctionEnded(epochRewards, epochToTotalDonated[currentEpoch - 1]);
     }
-
 
     function storeGame() internal {
         epochToTotalDonated[currentEpoch] = totalDonated;
@@ -117,11 +114,16 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         }
 
         uint256 unclaimedAmount = epochRewards - totalClaimed;
-        if (unclaimedAmount == 0) {
+
+        if (unclaimedAmount < minimumBalancerDonationAmount) {
             epochDonated[epoch] = true;
             return;
         }
-        require(IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmount, "Not enough incentive balance to donate");
+
+        require(
+            IERC20(incentiveTokenAddress).balanceOf(address(this)) >= unclaimedAmount,
+            "Not enough incentive balance to donate"
+        );
 
         uint256[] memory amountsIn = new uint256[](assetsInPool);
         amountsIn[olasIndex] = unclaimedAmount;
@@ -129,7 +131,12 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         IERC20 token = IERC20(incentiveTokenAddress);
         token.approve(address(permit2), 0);
         token.approve(address(permit2), unclaimedAmount);
-        permit2.approve(incentiveTokenAddress, balancerRouter, uint160(unclaimedAmount), uint48(block.timestamp + 1 days));
+        permit2.approve(
+            incentiveTokenAddress,
+            balancerRouter,
+            uint160(unclaimedAmount),
+            uint48(block.timestamp + 1 days)
+        );
         IBalancerRouter(balancerRouter).donate(poolId, amountsIn, true, "");
         epochDonated[epoch] = true;
         emit UnclaimedRewardsDonated(unclaimedAmount);
@@ -141,12 +148,15 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         if (contributionAmount == 0) {
             return;
         }
+        // uint256 minimumTradeAmount = IBalancerVaultAdmin(balancerRouter).getMinimumTradeAmount();
+        // if (contributionAmount < minimumTradeAmount) {
+        //     return;
+        // }
         uint256[] memory amountsIn = new uint256[](assetsInPool);
         amountsIn[wethIndex] = contributionAmount;
-        IBalancerRouter(balancerRouter).donate{value: contributionAmount}(poolId, amountsIn, true, "");
+        IBalancerRouter(balancerRouter).donate{ value: contributionAmount }(poolId, amountsIn, true, "");
         emit EthDonatedToBalancer(contributionAmount);
     }
-
 
     function claim() external nonReentrant {
         require(currentEpoch > 0, "No epoch to claim from");
@@ -171,7 +181,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         IERC20(incentiveTokenAddress).transfer(msg.sender, amount);
 
         totalClaimed += amount;
-        emit RewardsClaimed(msg.sender, amount);
+        emit RewardsClaimed(msg.sender, amount, donation);
     }
 
     function claimable(address _address) external view returns (uint256) {
@@ -243,12 +253,11 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         return blocksRemaining;
     }
 
-
     function getTotalDonated() public view returns (uint256) {
         return totalDonated;
     }
 
-    function getEpochRewards() public view returns (uint256) {
+    function getEpochRewards() public pure returns (uint256) {
         return epochRewards;
     }
 
@@ -260,7 +269,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         return totalClaimed;
     }
 
-    function getEpochLength() public view returns (uint256) {
+    function getEpochLength() public pure returns (uint256) {
         return epochLength;
     }
     function getTotalUnclaimed() public view returns (uint256) {
@@ -281,25 +290,37 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     function forceAdvanceEpoch() external onlyOwner {
         storeGame();
         advanceEpoch();
-        emit AuctionEnded(0);
+        emit AuctionEnded(epochRewards, epochToTotalDonated[currentEpoch - 1]);
     }
 
-    function getGameState(address user) external view returns (
-        uint256 _currentEpoch,
-        uint256 _epochLength,
-        uint256 _epochEndBlock,
-        uint256 _minimumDonation,
-        uint256 _blocksRemaining,
-        uint256 _epochRewards,
-        uint256 _totalDonated,
-        uint256 _totalClaimed,
-        uint256 _incentiveBalance,
-        uint256 _userCurrentDonation,
-        uint256 _userCurrentShare,
-        uint256 _userClaimable,
-        bool _hasClaimed,
-        bool _canPlayGame
-    ) {
+    function drainIncentiveBalance() external onlyOwner {
+        uint256 balance = IERC20(incentiveTokenAddress).balanceOf(address(this));
+        require(balance > 0, "No incentive balance to drain");
+        IERC20(incentiveTokenAddress).safeTransfer(msg.sender, balance);
+    }
+
+    function getGameState(
+        address user
+    )
+        external
+        view
+        returns (
+            uint256 _currentEpoch,
+            uint256 _epochLength,
+            uint256 _epochEndBlock,
+            uint256 _minimumDonation,
+            uint256 _blocksRemaining,
+            uint256 _epochRewards,
+            uint256 _totalDonated,
+            uint256 _totalClaimed,
+            uint256 _incentiveBalance,
+            uint256 _userCurrentDonation,
+            uint256 _userCurrentShare,
+            uint256 _userClaimable,
+            bool _hasClaimed,
+            bool _canPlayGame
+        )
+    {
         _currentEpoch = currentEpoch;
         _epochLength = epochLength;
         _epochEndBlock = epochToEndBlock[currentEpoch];
@@ -311,7 +332,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         _incentiveBalance = IERC20(incentiveTokenAddress).balanceOf(address(this));
         _userCurrentDonation = epochToDonations[currentEpoch][user];
         _userCurrentShare = totalDonated == 0 ? 0 : (_userCurrentDonation * 1e18) / totalDonated;
-    
+
         if (currentEpoch == 0) {
             _userClaimable = 0;
             _hasClaimed = false;
@@ -329,11 +350,11 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         _canPlayGame = canPlayGame();
     }
 
-
     constructor(
         address _owner,
         uint256 _minimumDonation,
         address _balancerRouter,
+        address _balancerVaultAdmin,
         address _poolId,
         uint256 _assetsInPool,
         uint256 _wethIndex,
@@ -351,6 +372,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         permit2 = IPermit2(IBalancerRouter(_balancerRouter).getPermit2());
         currentEpoch = 1;
         epochToEndBlock[1] = block.number + epochLength;
-        
+        balancerVaultAdmin = _balancerVaultAdmin;
+        minimumBalancerDonationAmount = IBalancerVaultAdmin(balancerVaultAdmin).getMinimumTradeAmount();
     }
 }

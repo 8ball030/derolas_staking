@@ -24,6 +24,7 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
 
   const minimumDonation: number = 10000000000000; // 0.00001 ETH
   const balancerRouter: string = "0x3f170631ed9821ca51a59d996ab095162438dc10";
+  const balancerVaultAdmin: string = "0x35fFB749B273bEb20F40f35EdeB805012C539864";
   const poolId: string = "0x7b4c560f33a71a9f7a500af3c4c65b46fbbafdb7";
   const assetsInPool: number = 8;
   const wethIndex: number = 1;
@@ -39,6 +40,7 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
       deployer,
       minimumDonation,
       balancerRouter,
+      balancerVaultAdmin,
       poolId,
       assetsInPool,
       wethIndex,
