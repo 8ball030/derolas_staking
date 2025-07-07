@@ -52,9 +52,9 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     mapping(uint256 => bool) public epochDonated;
 
     event DonationReceived(address indexed donatorAddress, uint256 indexed amount);
-    event AuctionEnded(uint256 indexed epochRewards);
+    event AuctionEnded(uint256 indexed epochRewards, uint256 indexed totalDonated);
     event UnclaimedRewardsDonated(uint256 indexed amount);
-    event RewardsClaimed(address indexed donatorAddress, uint256 indexed amount);
+    event RewardsClaimed(address indexed donatorAddress, uint256 indexed rewardsAmount, uint256 indexed donationAmount);
     event EthDonatedToBalancer(uint256 indexed amount);
 
     receive() external payable {}
@@ -88,7 +88,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         donateEthContribution();
         storeGame();
         advanceEpoch();
-        emit AuctionEnded(epochRewards);
+        emit AuctionEnded(epochRewards, epochToTotalDonated[currentEpoch - 1]);
     }
 
     function storeGame() internal {
@@ -181,7 +181,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
         IERC20(incentiveTokenAddress).transfer(msg.sender, amount);
 
         totalClaimed += amount;
-        emit RewardsClaimed(msg.sender, amount);
+        emit RewardsClaimed(msg.sender, amount, donation);
     }
 
     function claimable(address _address) external view returns (uint256) {
@@ -290,7 +290,7 @@ contract DerolasStaking is ReentrancyGuard, Ownable {
     function forceAdvanceEpoch() external onlyOwner {
         storeGame();
         advanceEpoch();
-        emit AuctionEnded(0);
+        emit AuctionEnded(epochRewards, epochToTotalDonated[currentEpoch - 1]);
     }
 
     function drainIncentiveBalance() external onlyOwner {
