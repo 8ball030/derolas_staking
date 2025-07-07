@@ -22,21 +22,25 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
   const { deployer } = await hre.getNamedAccounts();
   const { deploy } = hre.deployments;
 
-  const minimumDonation: number = 1000000000000000; // 0.001 ETH
+  const minimumDonation: number = 10000000000000; // 0.00001 ETH
   const balancerRouter: string = "0x3f170631ed9821ca51a59d996ab095162438dc10";
-  const poolId: string = "0xaf5b7999f491c42c05b5a2ca80f1d200d617cc8c";
+  const balancerVaultAdmin: string = "0x35fFB749B273bEb20F40f35EdeB805012C539864";
+  const poolId: string = "0x7b4c560f33a71a9f7a500af3c4c65b46fbbafdb7";
   const assetsInPool: number = 8;
   const wethIndex: number = 1;
   const olasIndex: number = 3;
   const incentiveTokenAddress: string = "0x54330d28ca3357f294334bdc454a032e7f353416";
 
-  await deploy("DerolasStaking", {
+  console.log("👋 Deploying DerolasAuction contract...");
+  console.log("Deployer address:", deployer);
+  await deploy("DerolasAuction", {
     from: deployer,
     // Contract constructor arguments
     args: [
       deployer,
       minimumDonation,
       balancerRouter,
+      balancerVaultAdmin,
       poolId,
       assetsInPool,
       wethIndex,
@@ -50,7 +54,7 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
   });
 
   // Get the deployed contract to interact with it after deploying.
-  const staking = await hre.ethers.getContract<Contract>("DerolasStaking", deployer);
+  const staking = await hre.ethers.getContract<Contract>("DerolasAuction", deployer);
   console.log("👋 Epoch is to begin...");
   console.log("Staking contract deployed to:", staking.address);
   console.log("Staking contract deployed by:", deployer);
@@ -85,4 +89,4 @@ export default deployYourContract;
 
 // Tags are useful if you have multiple deploy files and only want to run one of them.
 // e.g. yarn deploy --tags YourContract
-deployYourContract.tags = ["DerolasStaking"];
+deployYourContract.tags = ["DerolasAuction"];
