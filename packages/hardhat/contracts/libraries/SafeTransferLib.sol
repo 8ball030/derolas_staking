@@ -26,10 +26,10 @@ library SafeTransferLib {
 
         // solhint-disable-next-line no-inline-assembly
         assembly {
-        // We'll write our calldata to this slot below, but restore it later.
+            // We'll write our calldata to this slot below, but restore it later.
             let memPointer := mload(0x40)
 
-        // Write the abi-encoded calldata into memory, beginning with the function selector.
+            // Write the abi-encoded calldata into memory, beginning with the function selector.
             mstore(0, 0x23b872dd00000000000000000000000000000000000000000000000000000000)
             mstore(4, and(from, 0xffffffffffffffffffffffffffffffffffffffff)) // Append the "from" argument.
             mstore(36, and(to, 0xffffffffffffffffffffffffffffffffffffffff)) // Append the "to" argument.
@@ -68,10 +68,10 @@ library SafeTransferLib {
 
         // solhint-disable-next-line no-inline-assembly
         assembly {
-        // We'll write our calldata to this slot below, but restore it later.
+            // We'll write our calldata to this slot below, but restore it later.
             let memPointer := mload(0x40)
 
-        // Write the abi-encoded calldata into memory, beginning with the function selector.
+            // Write the abi-encoded calldata into memory, beginning with the function selector.
             mstore(0, 0xa9059cbb00000000000000000000000000000000000000000000000000000000)
             mstore(4, and(to, 0xffffffffffffffffffffffffffffffffffffffff)) // Append the "to" argument.
             mstore(36, amount) // Append the "amount" argument.
@@ -95,3 +95,4 @@ library SafeTransferLib {
         }
     }
 }
+

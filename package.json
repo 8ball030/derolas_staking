@@ -4,7 +4,7 @@
   "private": true,
   "workspaces": {
     "packages": [
-      "packages/*"
+      "packages/hardhat"
     ]
   },
   "scripts": {
@@ -57,6 +57,5 @@
     "node": ">=20.18.3"
   },
   "dependencies": {
-    "@wagmi/connectors": "^5.7.13"
   }
 }
