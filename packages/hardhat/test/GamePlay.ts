@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import { ethers, network } from "hardhat";
 import { DerolasStaking } from "../typechain-types";
-import { helpers } from "@nomicfoundation/hardhat-network-helpers";
+import { time, takeSnapshot } from "@nomicfoundation/hardhat-network-helpers";
 // import { Contract } from "ethers/lib.commonjs/ethers";
 
 // const minimumDonation: number = 1000000000000000; // 0.001 ETH
@@ -208,22 +208,22 @@ describe.only("DerolasStaking", function () {
       const currentEpoch = await stakingContract.currentEpoch();
       expect(currentEpoch).to.equal(1);
     });
-    it("Can end Epoch and start a new epoch", async function () {
+    it.only("Can end Epoch and start a new epoch", async function () {
       // Take a snapshot of the current state of the blockchain
-      //const snapshot = await helpers.takeSnapshot();
+      const snapshot = await takeSnapshot();
 
       const currentEpoch = await stakingContract.currentEpoch();
       const secondsRemaining = (await stakingContract.getRemainingEpochLength()).remainingEpochLength;
 
       // Advance time
-      await helpers.time.increase(secondsRemaining);
+      await time.increase(secondsRemaining);
 
       await stakingContract.endEpoch();
       const newEpoch = await stakingContract.currentEpoch();
       expect(newEpoch).to.gt(currentEpoch);
 
       // Restore a previous state of blockchain
-      //snapshot.restore();
+      snapshot.restore();
     });
     it("Should be able to contribute in the first epoch", async function () {
       const donationAmount = 0.001; // 0.001 ETH
