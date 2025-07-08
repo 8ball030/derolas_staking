@@ -30,6 +30,9 @@ jobs:
       - name: Use project-pinned Yarn version
         run: corepack enable
 
+      - name: Install dependencies (with debug)
+        run: yarn install --immutable --verbose
+
       - name: Install dependencies
         run: yarn 
       
