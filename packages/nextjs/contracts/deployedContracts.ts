@@ -12,13 +12,8 @@ const deployedContracts = {
         {
           inputs: [
             {
-              internalType: "address",
-              name: "_owner",
-              type: "address",
-            },
-            {
               internalType: "uint256",
-              name: "_minimumDonation",
+              name: "_minDonation",
               type: "uint256",
             },
             {
@@ -32,24 +27,34 @@ const deployedContracts = {
               type: "address",
             },
             {
-              internalType: "uint8",
+              internalType: "uint256",
               name: "_assetsInPool",
-              type: "uint8",
-            },
-            {
-              internalType: "uint8",
-              name: "_wethIndex",
-              type: "uint8",
-            },
-            {
-              internalType: "uint8",
-              name: "_olasIndex",
-              type: "uint8",
+              type: "uint256",
             },
             {
               internalType: "address",
               name: "_incentiveTokenAddress",
               type: "address",
+            },
+            {
+              internalType: "uint256",
+              name: "_incentiveTokenIndex",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "_availableRewards",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "_epochLength",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "_maxCheckpointDelay",
+              type: "uint256",
             },
           ],
           stateMutability: "nonpayable",
@@ -59,65 +64,26 @@ const deployedContracts = {
           inputs: [
             {
               internalType: "address",
-              name: "target",
-              type: "address",
-            },
-          ],
-          name: "AddressEmptyCode",
-          type: "error",
-        },
-        {
-          inputs: [
-            {
-              internalType: "address",
-              name: "account",
-              type: "address",
-            },
-          ],
-          name: "AddressInsufficientBalance",
-          type: "error",
-        },
-        {
-          inputs: [],
-          name: "FailedInnerCall",
-          type: "error",
-        },
-        {
-          inputs: [
-            {
-              internalType: "address",
-              name: "owner",
-              type: "address",
-            },
-          ],
-          name: "OwnableInvalidOwner",
-          type: "error",
-        },
-        {
-          inputs: [
-            {
-              internalType: "address",
-              name: "account",
-              type: "address",
-            },
-          ],
-          name: "OwnableUnauthorizedAccount",
-          type: "error",
-        },
-        {
-          inputs: [],
-          name: "ReentrancyGuardReentrantCall",
-          type: "error",
-        },
-        {
-          inputs: [
-            {
-              internalType: "address",
               name: "token",
               type: "address",
             },
+            {
+              internalType: "address",
+              name: "from",
+              type: "address",
+            },
+            {
+              internalType: "address",
+              name: "to",
+              type: "address",
+            },
+            {
+              internalType: "uint256",
+              name: "value",
+              type: "uint256",
+            },
           ],
-          name: "SafeERC20FailedOperation",
+          name: "TokenTransferFailed",
           type: "error",
         },
         {
@@ -126,7 +92,25 @@ const deployedContracts = {
             {
               indexed: true,
               internalType: "uint256",
-              name: "epochRewards",
+              name: "epochCounter",
+              type: "uint256",
+            },
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "totalEpochDonations",
+              type: "uint256",
+            },
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "totalEpochClaimed",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "availableRewards",
               type: "uint256",
             },
           ],
@@ -158,17 +142,48 @@ const deployedContracts = {
             {
               indexed: true,
               internalType: "address",
-              name: "previousOwner",
-              type: "address",
-            },
-            {
-              indexed: true,
-              internalType: "address",
-              name: "newOwner",
+              name: "owner",
               type: "address",
             },
           ],
-          name: "OwnershipTransferred",
+          name: "OwnerUpdated",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "nextEpoch",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "availableRewards",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "epochLength",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "maxCheckpointDelay",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "minDonation",
+              type: "uint256",
+            },
+          ],
+          name: "ParamsUpdated",
           type: "event",
         },
         {
@@ -195,6 +210,51 @@ const deployedContracts = {
           inputs: [
             {
               indexed: true,
+              internalType: "address",
+              name: "stakingInstance",
+              type: "address",
+            },
+          ],
+          name: "StakingInstanceUpdated",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "amount",
+              type: "uint256",
+            },
+          ],
+          name: "TopUpIncentiveReceived",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "insufficientBalance",
+              type: "uint256",
+            },
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "expected",
+              type: "uint256",
+            },
+          ],
+          name: "UnclaimedRewardsAdjusted",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
               internalType: "uint256",
               name: "amount",
               type: "uint256",
@@ -208,9 +268,9 @@ const deployedContracts = {
           name: "assetsInPool",
           outputs: [
             {
-              internalType: "uint8",
+              internalType: "uint256",
               name: "",
-              type: "uint8",
+              type: "uint256",
             },
           ],
           stateMutability: "view",
@@ -232,33 +292,42 @@ const deployedContracts = {
         {
           inputs: [
             {
-              internalType: "uint256",
-              name: "claimAmount",
-              type: "uint256",
+              internalType: "address",
+              name: "newOwner",
+              type: "address",
             },
           ],
-          name: "canPayTicket",
-          outputs: [
-            {
-              internalType: "bool",
-              name: "",
-              type: "bool",
-            },
-          ],
-          stateMutability: "view",
+          name: "changeOwner",
+          outputs: [],
+          stateMutability: "nonpayable",
           type: "function",
         },
         {
-          inputs: [],
-          name: "canPlayGame",
-          outputs: [
+          inputs: [
             {
-              internalType: "bool",
-              name: "",
-              type: "bool",
+              internalType: "uint256",
+              name: "newEpochRewards",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "newEpochLength",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "newMaxCheckpointDelay",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "minDonation",
+              type: "uint256",
             },
           ],
-          stateMutability: "view",
+          name: "changeParams",
+          outputs: [],
+          stateMutability: "nonpayable",
           type: "function",
         },
         {
@@ -272,7 +341,7 @@ const deployedContracts = {
           inputs: [
             {
               internalType: "address",
-              name: "_address",
+              name: "account",
               type: "address",
             },
           ],
@@ -290,19 +359,6 @@ const deployedContracts = {
         {
           inputs: [],
           name: "currentEpoch",
-          outputs: [
-            {
-              internalType: "uint8",
-              name: "",
-              type: "uint8",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "currentIncentiveBalance",
           outputs: [
             {
               internalType: "uint256",
@@ -330,42 +386,46 @@ const deployedContracts = {
         {
           inputs: [
             {
-              internalType: "uint8",
-              name: "",
-              type: "uint8",
-            },
-          ],
-          name: "epochDonated",
-          outputs: [
-            {
-              internalType: "bool",
-              name: "",
-              type: "bool",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "epochLength",
-          outputs: [
-            {
               internalType: "uint256",
               name: "",
               type: "uint256",
             },
           ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "epochRewards",
+          name: "epochPoints",
           outputs: [
             {
               internalType: "uint256",
-              name: "",
+              name: "availableRewards",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "totalDonated",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "totalClaimed",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "length",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "maxCheckpointDelay",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "minDonations",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "endTime",
               type: "uint256",
             },
           ],
@@ -375,9 +435,9 @@ const deployedContracts = {
         {
           inputs: [
             {
-              internalType: "uint8",
+              internalType: "uint256",
               name: "",
-              type: "uint8",
+              type: "uint256",
             },
             {
               internalType: "address",
@@ -399,9 +459,9 @@ const deployedContracts = {
         {
           inputs: [
             {
-              internalType: "uint8",
+              internalType: "uint256",
               name: "",
-              type: "uint8",
+              type: "uint256",
             },
             {
               internalType: "address",
@@ -410,44 +470,6 @@ const deployedContracts = {
             },
           ],
           name: "epochToDonations",
-          outputs: [
-            {
-              internalType: "uint256",
-              name: "",
-              type: "uint256",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [
-            {
-              internalType: "uint8",
-              name: "",
-              type: "uint8",
-            },
-          ],
-          name: "epochToEndBlock",
-          outputs: [
-            {
-              internalType: "uint256",
-              name: "",
-              type: "uint256",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [
-            {
-              internalType: "uint8",
-              name: "",
-              type: "uint8",
-            },
-          ],
-          name: "epochToTotalDonated",
           outputs: [
             {
               internalType: "uint256",
@@ -478,53 +500,14 @@ const deployedContracts = {
           type: "function",
         },
         {
-          inputs: [],
-          name: "getBlocksRemaining",
-          outputs: [
-            {
-              internalType: "uint256",
-              name: "",
-              type: "uint256",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "getCurrentEpoch",
-          outputs: [
-            {
-              internalType: "uint8",
-              name: "",
-              type: "uint8",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
           inputs: [
             {
               internalType: "address",
-              name: "_address",
+              name: "account",
               type: "address",
             },
           ],
           name: "getCurrentShare",
-          outputs: [
-            {
-              internalType: "uint256",
-              name: "",
-              type: "uint256",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "getEpochLength",
           outputs: [
             {
               internalType: "uint256",
@@ -549,9 +532,124 @@ const deployedContracts = {
           type: "function",
         },
         {
-          inputs: [],
-          name: "getEpochRewards",
+          inputs: [
+            {
+              internalType: "address",
+              name: "user",
+              type: "address",
+            },
+          ],
+          name: "getGameState",
           outputs: [
+            {
+              components: [
+                {
+                  internalType: "uint256",
+                  name: "epochLength",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "currentEpoch",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "epochEndTime",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "minimalDonation",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "secondsRemaining",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "epochRewards",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "totalDonated",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "totalClaimed",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "incentiveBalance",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "userCurrentDonation",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "userCurrentShare",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "userClaimable",
+                  type: "uint256",
+                },
+                {
+                  internalType: "bool",
+                  name: "hasClaimed",
+                  type: "bool",
+                },
+                {
+                  internalType: "bool",
+                  name: "canPlayGame",
+                  type: "bool",
+                },
+              ],
+              internalType: "struct GameState",
+              name: "state",
+              type: "tuple",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "multisig",
+              type: "address",
+            },
+          ],
+          name: "getMultisigNonces",
+          outputs: [
+            {
+              internalType: "uint256[]",
+              name: "nonces",
+              type: "uint256[]",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "getRemainingEpochLength",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
             {
               internalType: "uint256",
               name: "",
@@ -563,20 +661,7 @@ const deployedContracts = {
         },
         {
           inputs: [],
-          name: "getTotalClaimed",
-          outputs: [
-            {
-              internalType: "uint256",
-              name: "",
-              type: "uint256",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "getTotalDonated",
+          name: "getSecondsSinceEpochEnd",
           outputs: [
             {
               internalType: "uint256",
@@ -602,19 +687,6 @@ const deployedContracts = {
         },
         {
           inputs: [],
-          name: "incentiveBalance",
-          outputs: [
-            {
-              internalType: "uint256",
-              name: "",
-              type: "uint256",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
           name: "incentiveTokenAddress",
           outputs: [
             {
@@ -628,20 +700,7 @@ const deployedContracts = {
         },
         {
           inputs: [],
-          name: "maxDonatorsPerEpoch",
-          outputs: [
-            {
-              internalType: "uint8",
-              name: "",
-              type: "uint8",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "minimumDonation",
+          name: "incentiveTokenIndex",
           outputs: [
             {
               internalType: "uint256",
@@ -653,13 +712,29 @@ const deployedContracts = {
           type: "function",
         },
         {
-          inputs: [],
-          name: "olasIndex",
+          inputs: [
+            {
+              internalType: "uint256[]",
+              name: "curNonces",
+              type: "uint256[]",
+            },
+            {
+              internalType: "uint256[]",
+              name: "lastNonces",
+              type: "uint256[]",
+            },
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          name: "isRatioPass",
           outputs: [
             {
-              internalType: "uint8",
-              name: "",
-              type: "uint8",
+              internalType: "bool",
+              name: "ratioPass",
+              type: "bool",
             },
           ],
           stateMutability: "view",
@@ -680,10 +755,23 @@ const deployedContracts = {
         },
         {
           inputs: [],
+          name: "paramsUpdateRequested",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
           name: "permit2",
           outputs: [
             {
-              internalType: "contract IPermit2",
+              internalType: "address",
               name: "",
               type: "address",
             },
@@ -705,10 +793,29 @@ const deployedContracts = {
           type: "function",
         },
         {
-          inputs: [],
-          name: "renounceOwnership",
+          inputs: [
+            {
+              internalType: "address",
+              name: "_stakingInstance",
+              type: "address",
+            },
+          ],
+          name: "setStakingInstance",
           outputs: [],
           stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "stakingInstance",
+          outputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          stateMutability: "view",
           type: "function",
         },
         {
@@ -722,58 +829,6 @@ const deployedContracts = {
           name: "topUpIncentiveBalance",
           outputs: [],
           stateMutability: "nonpayable",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "totalClaimed",
-          outputs: [
-            {
-              internalType: "uint256",
-              name: "",
-              type: "uint256",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "totalDonated",
-          outputs: [
-            {
-              internalType: "uint256",
-              name: "",
-              type: "uint256",
-            },
-          ],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [
-            {
-              internalType: "address",
-              name: "newOwner",
-              type: "address",
-            },
-          ],
-          name: "transferOwnership",
-          outputs: [],
-          stateMutability: "nonpayable",
-          type: "function",
-        },
-        {
-          inputs: [],
-          name: "wethIndex",
-          outputs: [
-            {
-              internalType: "uint8",
-              name: "",
-              type: "uint8",
-            },
-          ],
-          stateMutability: "view",
           type: "function",
         },
         {
